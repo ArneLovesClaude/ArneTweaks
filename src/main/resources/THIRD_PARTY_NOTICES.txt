@@ -1,0 +1,90 @@
+ArneTweaks enthaelt Funktionen, die nach diesen Projekten nachgebaut wurden:
+
+Totem Pop Chams (Mods > Totem Pop Chams)
+https://github.com/Walksy/TotemPopChams
+
+Shield Fixes (Mods > Shield Fixes)
+https://github.com/Walksy/ShieldFixes
+
+Shield Status (Mods > Shield Status)
+https://github.com/Walksy/ShieldStatus
+
+TotemCounter (Mods > TotemCounter)
+https://github.com/uku3lig/totemcounter
+
+Armor HUD (Mods > Armor HUD)
+https://github.com/uku3lig/armor-hud
+
+No Darkness (Essentials > No Darkness)
+https://github.com/OneSaw/removewardeneffect-effect-1.20.4
+
+NoFog (Essentials > NoFog), fuer 1.21.11 neu geschrieben
+https://github.com/Virtuoel/NoFog
+
+Cubes Without Borders (Mods > Cubes Without Borders), Kern nachgebaut
+https://github.com/Kira-NT/cubes-without-borders
+
+Diese Projekte stehen unter der MIT-Lizenz:
+
+MIT License
+
+Copyright (c) 2024 RedVortex (TotemPopChams)
+Copyright (c) 2026 Walksy (ShieldFixes)
+Copyright (c) 2025 Walksy (ShieldStatus)
+Copyright (c) 2022 uku (TotemCounter)
+Copyright (c) 2021 BerdinskiyBear (Armor HUD)
+Copyright (c) 2025 OneSaw (No Darkness)
+Copyright (c) 2020 - 2024 Virtuoel (NoFog)
+Copyright (c) 2024-2026 Kira NT (Cubes Without Borders)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+AppleSkin (Mods > AppleSkin), inklusive der Symbol-Grafik appleskin_icons.png
+https://github.com/squeek502/AppleSkin
+Gemeinfrei (The Unlicense): "This is free and unencumbered software released into the public domain."
+
+No Chat Restrictions (Mods > No Chat Restrictions)
+https://github.com/Aizistral-Studios/No-Chat-Restrictions
+DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE, Version 2
+
+Motion Blur (Mods > Motion Blur)
+Eigene Umsetzung, kein uebernommener Code. Idee nach Natural Motion Blur:
+https://github.com/ItsPasi/natural-motionblur-fabric
+
+Shader (Shader-Seite im Menue)
+ArneTweaks enthaelt keinen Code von Iris. Die Shader-Seite steuert nur die
+separat installierte Mod Iris (LGPL-3.0) ueber deren oeffentliche Methoden.
+https://github.com/IrisShaders/Iris
+
+Zoom (Mods > Zoom)
+Eigene Umsetzung, kein uebernommener Code. Verhalten nach Zoomify (LGPL-3.0):
+https://github.com/isXander/Zoomify
+
+CPS-Zaehler und Keystrokes (Mods > Info-HUD)
+Eigene Umsetzung, kein uebernommener Code. Idee nach KeysPerSecond (GPL-3.0):
+https://github.com/RoanH/KeysPerSecond
+
+
+Combat Hitboxes (Mods > PvP > Combat Hitboxes), fuer Yarn-Namen uebertragen
+https://github.com/sootysplash/combat-hitboxes
+Copyright Sootysplash. Lizenz: Apache License 2.0
+https://www.apache.org/licenses/LICENSE-2.0
+Geaendert: eigene Einstellungen und Farbauswahl im ArneTweaks-Menue, Yarn-Mappings, an den
+ArneTweaks-Hauptschalter gebunden; wenn die echte Mod installiert ist, bleibt die eingebaute Version aus.

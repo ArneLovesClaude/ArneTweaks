@@ -1,0 +1,45 @@
+{
+    "schemaVersion": 1,
+    "id": "arnestyles",
+    "version": "${version}",
+    "name": "ArneTweaks",
+    "description": "Clientseitige PvP-Mod: einzelne Texturen aus vielen Texture-Packs, Essentials und Extras wie Pop Chams, Shield Status, TotemCounter, Armor HUD, Effekt-Timer, AppleSkin, Motion Blur und No Chat Restrictions.",
+    "authors": [
+        "Arne"
+    ],
+    "contact": {
+        "homepage": "https://github.com/ArneLovesClaude/ArneTweaks",
+        "sources": "https://github.com/ArneLovesClaude/ArneTweaks",
+        "issues": "https://github.com/ArneLovesClaude/ArneTweaks/issues"
+    },
+    "license": "CC0-1.0",
+    "icon": "assets/arnestyles/icon.png",
+    "environment": "client",
+    "entrypoints": {
+        "main": [
+            "com.arnestyles.ArneStyles"
+        ],
+        "client": [
+            "com.arnestyles.client.ArneStylesClient"
+        ],
+        "modmenu": [
+            "com.arnestyles.client.ArneModMenu"
+        ]
+    },
+    "mixins": [
+        {
+            "config": "arnestyles.client.mixins.json",
+            "environment": "client"
+        }
+    ],
+    "suggests": {
+        "modmenu": "*",
+        "skyboxify": "*"
+    },
+    "depends": {
+        "fabricloader": ">=0.18.4",
+        "minecraft": "~1.21.11",
+        "java": ">=21",
+        "fabric-api": "*"
+    }
+}

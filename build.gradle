@@ -1,0 +1,117 @@
+plugins {
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	id 'maven-publish'
+}
+
+base {
+	archivesName = 'arne-tweaks'
+}
+
+repositories {
+	mavenCentral()
+	// Mod Menu (nur zum Kompilieren der Einstellungs-Verknuepfung, wird nicht mit ausgeliefert)
+	maven { url = "https://maven.terraformersmc.com/releases/" }
+	// Iris und Sodium nur zum Testen der Shader-Seite (runClient), werden nicht mit ausgeliefert
+	maven {
+		url = "https://api.modrinth.com/maven"
+		content { includeGroup "maven.modrinth" }
+	}
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"arnestyles" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+dependencies {
+	// Versionen stehen in gradle.properties
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	modCompileOnly "com.terraformersmc:modmenu:17.0.0-beta.1"
+	// Iris und Sodium nur zum Testen der Iris-Shaderpacks: .\gradlew.bat runClient -PwithIris
+	if (project.hasProperty("withIris")) {
+		modLocalRuntime "maven.modrinth:sodium:mc1.21.11-0.8.14-fabric"
+		modLocalRuntime "maven.modrinth:iris:1.10.8+1.21.11-fabric"
+		// Bibliotheken, die Iris in seiner Mod-Datei mitbringt (im Testlauf werden sie nicht mit ausgepackt)
+		localRuntime "org.antlr:antlr4-runtime:4.13.1"
+		localRuntime "io.github.douira:glsl-transformer:3.0.0-pre3"
+		localRuntime "org.anarres:jcpp:1.4.14"
+	}
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+
+	// Die Styles aus Texture-Packs sind NICHT mehr in der Mod-Datei. Sie liegen als ZIPs in einem
+	// GitHub-Release und werden bei Bedarf geladen (CloudStyles). Packen: tools/pack_cloud.py
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 21
+}
+
+java {
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	repositories {
+	}
+}
+// Nach jedem Build: fertige Mod in den Minecraft-Mods-Ordner legen und alte Arne-Styles-Versionen entfernen.
+def minecraftModsDir = file("${System.getenv('APPDATA')}/.minecraft/mods")
+
+tasks.register("installToMinecraft") {
+	description = "Kopiert die fertige Mod nach %appdata%/.minecraft/mods und entfernt alte Versionen."
+	dependsOn remapJar
+	def jarFile = remapJar.archiveFile
+	def modsDir = minecraftModsDir
+	onlyIf { modsDir.isDirectory() }
+	doLast {
+		def jar = jarFile.get().asFile
+		try {
+			modsDir.listFiles()
+				.findAll { it.name ==~ /(arne-tweaks|arnetweaks|arne-styles|arnestyles)-.*\.jar/ && it.name != jar.name }
+				.each { java.nio.file.Files.delete(it.toPath()) }
+			java.nio.file.Files.copy(jar.toPath(), new File(modsDir, jar.name).toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+			println "ArneTweaks nach ${modsDir} kopiert."
+		} catch (IOException e) {
+			println "WARNUNG: Mod konnte nicht nach ${modsDir} kopiert werden. Laeuft Minecraft noch? (${e.message})"
+		}
+	}
+}
+
+tasks.named("build") {
+	finalizedBy "installToMinecraft"
+}

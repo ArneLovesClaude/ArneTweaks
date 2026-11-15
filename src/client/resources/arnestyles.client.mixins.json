@@ -1,0 +1,50 @@
+{
+    "required": true,
+    "package": "com.arnestyles.client.mixin",
+    "compatibilityLevel": "JAVA_21",
+    "client": [
+        "CameraMixin",
+        "ClientPlayNetworkHandlerMixin",
+        "ClientWorldPropertiesMixin",
+        "DrawContextMixin",
+        "EndCrystalEntityRendererMixin",
+        "EntityHitboxDebugRendererMixin",
+        "FireCommandRendererMixin",
+        "FogRendererMixin",
+        "GameRendererMixin",
+        "HeldItemRendererMixin",
+        "InGameHudMixin",
+        "InGameOverlayRendererMixin",
+        "ItemEntityRendererMixin",
+        "KeyBindingMixin",
+        "LightmapTextureManagerMixin",
+        "LivingEntityAccessor",
+        "MinecraftClientMixin",
+        "MouseComfortMixin",
+        "MouseMixin",
+        "OverlayTextureAccessor",
+        "OverlayTextureMixin",
+        "ParticleManagerMixin",
+        "PlayerEntityRendererMixin",
+        "PlayerHeldItemFeatureRendererMixin",
+        "PostEffectPassAccessor",
+        "PostEffectProcessorAccessor",
+        "ReloadableResourceManagerImplMixin",
+        "ScreenMixin",
+        "ShieldModelRendererMixin",
+        "SkyRenderingMixin",
+        "SoundSystemMixin",
+        "SourceMixin",
+        "StatusEffectFogModifierMixin",
+        "StuckObjectsMixin",
+        "WindowMixin",
+        "WorldRendererMixin",
+        "ZoomMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    },
+    "overwrites": {
+        "requireAnnotations": true
+    }
+}
