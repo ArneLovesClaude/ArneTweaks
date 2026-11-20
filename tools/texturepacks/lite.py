@@ -24,6 +24,15 @@ THEMES = {
     'gold_lite':     ('Gold Lite', 45, 1.0, 1.0, 'Gold & edel'),
     'aqua_lite':     ('Aqua Lite', 175, 1.0, 1.0, 'Türkis'),
     'mono_lite':     ('Mono Lite', None, 0.0, 1.0, 'Schwarz-Weiß, minimal'),
+    # Version 3.2.0
+    'crimson_lite':  ('Crimson Lite', 355, 1.1, 0.85, 'Blutrot & aggressiv'),
+    'ocean_lite':    ('Ocean Lite', 225, 1.0, 0.8, 'Tiefblau'),
+    'lime_lite':     ('Lime Lite', 85, 1.1, 1.05, 'Neon-Limette'),
+    'lavender_lite': ('Lavender Lite', 285, 0.55, 1.05, 'Pastell-Lila'),
+    'mint_lite':     ('Mint Lite', 150, 0.6, 1.05, 'Pastell-Mint'),
+    'noir_lite':     ('Noir Lite', None, 0.0, 0.6, 'Dunkel & schlicht'),
+    'cyber_lite':    ('Cyber Lite', 305, 1.15, 1.0, 'Neon-Pink'),
+    'copper_lite':   ('Copper Lite', 25, 0.8, 0.8, 'Kupfer & warm'),
 }
 
 ANIMATED = {'water_still', 'water_flow', 'lava_still', 'lava_flow', 'fire_0', 'fire_1', 'soul_fire_0',

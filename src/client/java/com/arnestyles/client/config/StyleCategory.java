@@ -16,6 +16,8 @@ public enum StyleCategory {
      * unter performance-packs/ und brauchen keinen Download.
      */
     PERFORMANCE(PreviewKind.FIT, "textures/block/grass_block_top.png"),
+    /** Keine Styles: Profile, Regler und Schalter fuer die Minecraft-Grafikoptionen (siehe PerformanceSettings). */
+    PERFORMANCE_SETTINGS(PreviewKind.SETTINGS, "textures/item/comparator.png"),
     CRYSTAL(PreviewKind.CRYSTAL, "textures/entity/end_crystal/end_crystal.png"),
     OBSIDIAN(PreviewKind.TILE, "textures/block/obsidian.png", "textures/block/crying_obsidian.png"),
     GLOWSTONE(PreviewKind.TILE, "textures/block/glowstone.png", "textures/item/glowstone_dust.png"),
@@ -78,7 +80,9 @@ public enum StyleCategory {
         /** Notenblock-Symbol und Anzahl der Sounds im Style. */
         SOUND,
         /** Keine Styles, sondern eine Liste von Schaltern (siehe Essential). */
-        ESSENTIALS
+        ESSENTIALS,
+        /** Keine Styles, sondern Grafik-Einstellungen (FPS-Einstellungen im Performance-Reiter). */
+        SETTINGS
     }
 
     private final PreviewKind previewKind;
