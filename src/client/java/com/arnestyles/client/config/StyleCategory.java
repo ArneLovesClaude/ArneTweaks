@@ -10,6 +10,12 @@ import java.util.Locale;
  * (z. B. Gaps nach Items, damit ein Gap-Style auch ueber einem Items-Style gilt).
  */
 public enum StyleCategory {
+    /**
+     * Ganze, sehr leichte Texture-Packs fuer schwache PCs (8x8, keine Animationen). Steht ganz vorne,
+     * damit jeder andere gewaehlte Style (z. B. ein Kristall) darueber gilt. Die Packs liegen in der Mod-Jar
+     * unter performance-packs/ und brauchen keinen Download.
+     */
+    PERFORMANCE(PreviewKind.FIT, "textures/block/grass_block_top.png"),
     CRYSTAL(PreviewKind.CRYSTAL, "textures/entity/end_crystal/end_crystal.png"),
     OBSIDIAN(PreviewKind.TILE, "textures/block/obsidian.png", "textures/block/crying_obsidian.png"),
     GLOWSTONE(PreviewKind.TILE, "textures/block/glowstone.png", "textures/item/glowstone_dust.png"),
