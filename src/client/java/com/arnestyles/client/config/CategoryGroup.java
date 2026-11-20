@@ -52,7 +52,7 @@ public enum CategoryGroup {
         StyleCategory.STONE, StyleCategory.DEEPSLATE, StyleCategory.ORES, StyleCategory.GRASS, StyleCategory.SNOW, StyleCategory.FIRE, StyleCategory.SKY),
     /** Mehr FPS: Grafik-Einstellungen und leichte Texture-Packs fuer schwache PCs. */
     PERFORMANCE("textures/item/feather.png",
-        StyleCategory.PERFORMANCE);
+        StyleCategory.PERFORMANCE_SETTINGS, StyleCategory.PERFORMANCE);
 
     /**
      * Reihenfolge der Seitenleiste: Ordner und einzelne Kategorien gemischt.

@@ -61,6 +61,11 @@ public final class StyleRegistry {
         int builtInCount = 0;
         int customCount = 0;
         for (StyleCategory category : StyleCategory.values()) {
+            if (category.previewKind() == StyleCategory.PreviewKind.SETTINGS) {
+                // Reine Einstellungs-Seite: keine Styles und kein Ordner.
+                STYLES.put(category, List.of(StyleDefinition.vanilla(category)));
+                continue;
+            }
             Map<String, StyleDefinition> byId = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             if (builtInRoot.isPresent()) {
                 for (StyleDefinition style : scan(category, builtInRoot.get().resolve(category.folderName()), true)) {

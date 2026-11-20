@@ -93,8 +93,9 @@ public class StylesScreen extends Screen {
     private static final int CARD_H = PREVIEW + 30;
     private static final int CARD_GAP = 6;
     private static final int ESSENTIAL_ROW_H = 20;
-    /** Zeilen mit Schaltern ueber den Packs im Performance-Reiter (Max-FPS + Sichtweite, dann je zwei Schalter). */
-    private static final int PERFORMANCE_ROWS = 1 + (PerformanceSettings.Toggle.values().length + 1) / 2;
+    /** Zeilen der FPS-Einstellungen: Profile, Regler-Zeilen, dann je zwei Schalter. */
+    private static final int PERFORMANCE_LINES = 1 + (PerformanceSettings.sliders().size() + 1) / 2
+        + (PerformanceSettings.Toggle.values().length + 1) / 2;
     private static final int MAX_SEARCH_LENGTH = 16;
     private static final long INPUT_GRACE_MS = 150L;
     private static final float FIRE_STEP = 0.05f;
@@ -244,7 +245,6 @@ public class StylesScreen extends Screen {
         this.paneRight = right - 10;
         boolean stylePage = !presetsOpen && !modsOpen && !shadersOpen && !themesOpen && !importOpen;
         int extraRows = !stylePage || KEY_CUSTOMIZE_TAB.equals(ConfigManager.get().activeTab) ? 0 : current == StyleCategory.SOUNDS ? 22 : current == StyleCategory.ORES ? 66
-            : current == StyleCategory.PERFORMANCE ? PERFORMANCE_ROWS * (ESSENTIAL_ROW_H + 2)
             : TintedTextures.supports(current) ? 44 : 0;
         this.cardsTop = top + HEADER_H + 44 + extraRows;
         this.cardsBottom = bottom - FOOTER_H - 4;
@@ -965,6 +965,9 @@ public class StylesScreen extends Screen {
         if (current == StyleCategory.ESSENTIALS) {
             return Math.max(0, EssentialSlider.values().length + essentialRows().size() - essentialRowsVisible());
         }
+        if (current == StyleCategory.PERFORMANCE_SETTINGS) {
+            return Math.max(0, PERFORMANCE_LINES - performanceLinesVisible());
+        }
         int total = StyleRegistry.getStyles(current).size();
         int rows = (total + columns - 1) / columns;
         return Math.max(0, rows - cardRows);
@@ -1478,6 +1481,10 @@ public class StylesScreen extends Screen {
         int headY = top + HEADER_H + 7;
 
         drawBigText(context, categoryName(current), paneX, headY, 1.3f, C_TEXT);
+        if (current == StyleCategory.PERFORMANCE_SETTINGS) {
+            drawPerformanceSettings(context, mouseX, mouseY);
+            return;
+        }
 
         // Schalter "Aktiv" rechts neben der Ueberschrift
         Text activeLabel = Text.translatable("arnestyles.gui.active");
@@ -1505,7 +1512,7 @@ public class StylesScreen extends Screen {
             if (cloud != null) {
                 info = cloud;
                 infoColor = C_WARN;
-            } else if (shownTintHover != null && (TintedTextures.supports(current) || current == StyleCategory.PERFORMANCE)) {
+            } else if (shownTintHover != null && TintedTextures.supports(current)) {
                 info = shownTintHover;
             } else if (dirty) {
                 info = Text.translatable("arnestyles.gui.pending");
@@ -1531,9 +1538,6 @@ public class StylesScreen extends Screen {
         }
         if (TintedTextures.supports(current)) {
             drawTintRows(context, mouseX, mouseY, config.modEnabled);
-        }
-        if (current == StyleCategory.PERFORMANCE) {
-            drawPerformanceRows(context, mouseX, mouseY);
         }
 
         int first = cardScroll * columns;
@@ -1595,54 +1599,95 @@ public class StylesScreen extends Screen {
         hits.add(new Hit(x, y, x + CARD_W, y + CARD_H, () -> chooseStyle(style)));
     }
 
-    // ---- Performance-Reiter ----
+    // ---- Performance-Reiter: FPS-Einstellungen ----
+
+    private int performanceLinesVisible() {
+        return Math.max(1, (cardsBottom - (top + HEADER_H + 42)) / (ESSENTIAL_ROW_H + 2));
+    }
 
     /**
-     * Ueber den Performance-Packs: oben "Max FPS" und die Sichtweite, darunter je zwei Schalter fuer die
-     * Grafikoptionen. Die Schalter aendern die echten Minecraft-Optionen und wirken sofort (ohne Neuladen).
+     * Seite "FPS-Einstellungen": oben die Profile, dann die Regler und die Schalter, je zwei pro Zeile.
+     * Alles aendert die echten Minecraft-Optionen und wirkt sofort. Mit dem Mausrad scrollbar.
      */
-    private void drawPerformanceRows(DrawContext context, int mouseX, int mouseY) {
+    private void drawPerformanceSettings(DrawContext context, int mouseX, int mouseY) {
         int w = paneRight - paneX;
         int half = (w - 4) / 2;
-        int y = top + HEADER_H + 42;
-        int y2 = y + ESSENTIAL_ROW_H - 2;
+        int y0 = top + HEADER_H + 42;
+        int lineH = ESSENTIAL_ROW_H + 2;
+        int visible = performanceLinesVisible();
+        cardScroll = Math.max(0, Math.min(cardScroll, Math.max(0, PERFORMANCE_LINES - visible)));
 
-        // Knopf "Max FPS": alles auf einmal auf schnell
-        boolean max = PerformanceSettings.isMaxFps();
-        boolean over = inside(mouseX, mouseY, paneX, y, paneX + half, y2);
-        if (max) {
-            roundBordered(context, paneX, y, paneX + half, y2, C_OK, C_CARD);
-        } else {
-            roundBordered(context, paneX, y, paneX + half, y2, C_ACCENT, over ? C_ACCENT : C_ACCENT_SOFT);
-        }
-        Text maxLabel = Text.translatable(max ? "arnestyles.performance.max_fps_done" : "arnestyles.performance.max_fps");
-        String maxText = this.textRenderer.trimToWidth(maxLabel.getString(), half - 8);
-        text(context, maxText, paneX + (half - this.textRenderer.getWidth(maxText)) / 2, y + 5, max ? C_OK : C_TEXT);
-        hits.add(new Hit(paneX, y, paneX + half, y2, PerformanceSettings::applyMaxFps));
-        if (over) {
-            tintHover = Text.translatable("arnestyles.performance.max_fps.desc");
-        }
+        Text info = shownTintHover != null ? shownTintHover : Text.translatable("arnestyles.gui.performance_settings_hint");
+        text(context, this.textRenderer.trimToWidth(info.getString(), w), paneX, top + HEADER_H + 26, C_MUTED);
 
-        if (drawSliderRow(context, PerformanceSettings.VIEW_DISTANCE, paneX + half + 4, y, w - half - 4, true, mouseX, mouseY, null)) {
-            tintHover = Text.translatable(PerformanceSettings.VIEW_DISTANCE.descriptionKey());
-        }
-
-        PerformanceSettings.Toggle[] toggles = PerformanceSettings.Toggle.values();
-        for (int i = 0; i < toggles.length; i++) {
-            PerformanceSettings.Toggle toggle = toggles[i];
-            int rowY = y + (1 + i / 2) * (ESSENTIAL_ROW_H + 2);
-            int x = i % 2 == 0 ? paneX : paneX + half + 4;
-            int rowW = i % 2 == 0 ? half : w - half - 4;
-            int rowY2 = rowY + ESSENTIAL_ROW_H - 2;
-            boolean rowOver = inside(mouseX, mouseY, x, rowY, x + rowW, rowY2);
-            round(context, x, rowY, x + rowW, rowY2, rowOver ? C_CARD_HOVER : C_CARD);
-            text(context, this.textRenderer.trimToWidth(Text.translatable(toggle.nameKey()).getString(), rowW - 40), x + 8, rowY + 5, C_TEXT);
-            drawSwitch(context, x + rowW - 28, rowY + 3, toggle.isOn(), false);
-            hits.add(new Hit(x, rowY, x + rowW, rowY2, toggle::toggle));
-            if (rowOver) {
-                tintHover = Text.translatable(toggle.descriptionKey());
+        int line = 0;
+        // Profile: drei Knoepfe nebeneinander
+        if (line >= cardScroll && line < cardScroll + visible) {
+            int y = y0 + (line - cardScroll) * lineH;
+            int y2 = y + ESSENTIAL_ROW_H - 2;
+            PerformanceSettings.Profile[] profiles = PerformanceSettings.Profile.values();
+            int bw = (w - 4 * (profiles.length - 1)) / profiles.length;
+            for (int i = 0; i < profiles.length; i++) {
+                PerformanceSettings.Profile profile = profiles[i];
+                int x1 = paneX + i * (bw + 4);
+                int x2 = i == profiles.length - 1 ? paneRight : x1 + bw;
+                boolean over = inside(mouseX, mouseY, x1, y, x2, y2);
+                boolean activeProfile = profile.isActive();
+                if (activeProfile) {
+                    roundBordered(context, x1, y, x2, y2, C_OK, C_CARD);
+                } else {
+                    roundBordered(context, x1, y, x2, y2, C_ACCENT, over ? C_ACCENT : C_ACCENT_SOFT);
+                }
+                String label = this.textRenderer.trimToWidth(Text.translatable(profile.nameKey()).getString(), x2 - x1 - 6);
+                text(context, label, x1 + (x2 - x1 - this.textRenderer.getWidth(label)) / 2, y + 5, activeProfile ? C_OK : C_TEXT);
+                hits.add(new Hit(x1, y, x2, y2, profile::apply));
+                if (over) {
+                    tintHover = Text.translatable(profile.descriptionKey());
+                }
             }
         }
+        line++;
+
+        // Regler, je zwei pro Zeile
+        List<SettingSlider> sliders = PerformanceSettings.sliders();
+        for (int i = 0; i < sliders.size(); i += 2, line++) {
+            if (line < cardScroll || line >= cardScroll + visible) {
+                continue;
+            }
+            int y = y0 + (line - cardScroll) * lineH;
+            for (int j = 0; j < 2 && i + j < sliders.size(); j++) {
+                SettingSlider slider = sliders.get(i + j);
+                int x = j == 0 ? paneX : paneX + half + 4;
+                int sw = j == 0 ? half : w - half - 4;
+                if (drawSliderRow(context, slider, x, y, sw, true, mouseX, mouseY, null)) {
+                    tintHover = Text.translatable(slider.descriptionKey());
+                }
+            }
+        }
+
+        // Schalter, je zwei pro Zeile
+        PerformanceSettings.Toggle[] toggles = PerformanceSettings.Toggle.values();
+        for (int i = 0; i < toggles.length; i += 2, line++) {
+            if (line < cardScroll || line >= cardScroll + visible) {
+                continue;
+            }
+            int y = y0 + (line - cardScroll) * lineH;
+            for (int j = 0; j < 2 && i + j < toggles.length; j++) {
+                PerformanceSettings.Toggle toggle = toggles[i + j];
+                int x = j == 0 ? paneX : paneX + half + 4;
+                int rowW = j == 0 ? half : w - half - 4;
+                int y2 = y + ESSENTIAL_ROW_H - 2;
+                boolean over = inside(mouseX, mouseY, x, y, x + rowW, y2);
+                round(context, x, y, x + rowW, y2, over ? C_CARD_HOVER : C_CARD);
+                text(context, this.textRenderer.trimToWidth(Text.translatable(toggle.nameKey()).getString(), rowW - 40), x + 8, y + 5, C_TEXT);
+                drawSwitch(context, x + rowW - 28, y + 3, toggle.isOn(), false);
+                hits.add(new Hit(x, y, x + rowW, y2, toggle::toggle));
+                if (over) {
+                    tintHover = Text.translatable(toggle.descriptionKey());
+                }
+            }
+        }
+        drawScrollMarkers(context);
     }
 
     // ---- Eigene Farbe (Stone, Deepslate, Gras, Feuer) ----

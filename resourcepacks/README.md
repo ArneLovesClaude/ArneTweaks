@@ -18,6 +18,16 @@ Optionen → Ressourcenpakete aktivieren.
 | `ArneTweaks_GoldLite.zip` | Gold & edel |
 | `ArneTweaks_AquaLite.zip` | Türkis |
 | `ArneTweaks_MonoLite.zip` | Schwarz-Weiß, minimal |
+| `ArneTweaks_CrimsonLite.zip` | Blutrot & aggressiv |
+| `ArneTweaks_OceanLite.zip` | Tiefblau |
+| `ArneTweaks_LimeLite.zip` | Neon-Limette |
+| `ArneTweaks_LavenderLite.zip` | Pastell-Lila |
+| `ArneTweaks_MintLite.zip` | Pastell-Mint |
+| `ArneTweaks_NoirLite.zip` | Dunkel & schlicht |
+| `ArneTweaks_CyberLite.zip` | Neon-Pink |
+| `ArneTweaks_CopperLite.zip` | Kupfer & warm |
+
+Alle Lite-Packs sind auch direkt in ArneTweaks eingebaut (Menü → Reiter **Performance**).
 
 Was sie leicht macht:
 - Blöcke in 8x8 statt 16x16 (ein Viertel des Grafikspeichers)
