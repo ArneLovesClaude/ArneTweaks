@@ -68,6 +68,16 @@ public final class StyleRegistry {
                     builtInCount++;
                 }
             }
+            if (category == StyleCategory.PERFORMANCE) {
+                // Performance-Packs sind klein und liegen direkt in der Mod-Jar (kein Download noetig).
+                Optional<Path> jarPacks = modPath(PERFORMANCE_FOLDER);
+                if (jarPacks.isPresent()) {
+                    for (StyleDefinition style : scan(category, jarPacks.get(), true)) {
+                        byId.put(style.id(), style);
+                        builtInCount++;
+                    }
+                }
+            }
             Path dir = categoryDir(category);
             try {
                 Files.createDirectories(dir);
@@ -204,8 +214,16 @@ public final class StyleRegistry {
 
     /** Ordner mit den mitgelieferten Dateien eines Essentials (in der Mod-Jar oder im Entwicklungsordner). */
     public static Optional<Path> essentialRoot(Essential essential) {
+        return modPath(essential.resourceFolder());
+    }
+
+    /** Ordner der mitgelieferten Performance-Packs in der Mod-Jar. */
+    private static final String PERFORMANCE_FOLDER = "performance-packs";
+
+    /** Ordner in der Mod-Jar (oder im Entwicklungsordner). */
+    private static Optional<Path> modPath(String folder) {
         return FabricLoader.getInstance().getModContainer(ArneStyles.MOD_ID)
-            .flatMap(mod -> mod.findPath(essential.resourceFolder()))
+            .flatMap(mod -> mod.findPath(folder))
             .filter(Files::isDirectory);
     }
 

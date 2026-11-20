@@ -10,6 +10,7 @@ import com.arnestyles.client.config.StyleCategory;
 import com.arnestyles.client.essentials.Essential;
 import com.arnestyles.client.essentials.EssentialSlider;
 import com.arnestyles.client.essentials.SettingSlider;
+import com.arnestyles.client.mods.PerformanceSettings;
 import com.arnestyles.client.mods.ArneShaders;
 import com.arnestyles.client.mods.ModSetting;
 import com.arnestyles.client.mods.PvpVisuals;
@@ -92,6 +93,8 @@ public class StylesScreen extends Screen {
     private static final int CARD_H = PREVIEW + 30;
     private static final int CARD_GAP = 6;
     private static final int ESSENTIAL_ROW_H = 20;
+    /** Zeilen mit Schaltern ueber den Packs im Performance-Reiter (Max-FPS + Sichtweite, dann je zwei Schalter). */
+    private static final int PERFORMANCE_ROWS = 1 + (PerformanceSettings.Toggle.values().length + 1) / 2;
     private static final int MAX_SEARCH_LENGTH = 16;
     private static final long INPUT_GRACE_MS = 150L;
     private static final float FIRE_STEP = 0.05f;
@@ -241,6 +244,7 @@ public class StylesScreen extends Screen {
         this.paneRight = right - 10;
         boolean stylePage = !presetsOpen && !modsOpen && !shadersOpen && !themesOpen && !importOpen;
         int extraRows = !stylePage || KEY_CUSTOMIZE_TAB.equals(ConfigManager.get().activeTab) ? 0 : current == StyleCategory.SOUNDS ? 22 : current == StyleCategory.ORES ? 66
+            : current == StyleCategory.PERFORMANCE ? PERFORMANCE_ROWS * (ESSENTIAL_ROW_H + 2)
             : TintedTextures.supports(current) ? 44 : 0;
         this.cardsTop = top + HEADER_H + 44 + extraRows;
         this.cardsBottom = bottom - FOOTER_H - 4;
@@ -974,6 +978,7 @@ public class StylesScreen extends Screen {
     @Override
     public void removed() {
         PreviewTextures.clear();
+        PerformanceSettings.flush();
         if (dirty && this.client != null) {
             dirty = false;
             this.client.reloadResources();
@@ -1500,11 +1505,13 @@ public class StylesScreen extends Screen {
             if (cloud != null) {
                 info = cloud;
                 infoColor = C_WARN;
-            } else if (shownTintHover != null && TintedTextures.supports(current)) {
+            } else if (shownTintHover != null && (TintedTextures.supports(current) || current == StyleCategory.PERFORMANCE)) {
                 info = shownTintHover;
             } else if (dirty) {
                 info = Text.translatable("arnestyles.gui.pending");
                 infoColor = C_WARN;
+            } else if (current == StyleCategory.PERFORMANCE) {
+                info = Text.translatable("arnestyles.gui.performance_hint");
             } else if (current == StyleCategory.SKY) {
                 info = Text.translatable("arnestyles.gui.sky_hint");
             } else {
@@ -1524,6 +1531,9 @@ public class StylesScreen extends Screen {
         }
         if (TintedTextures.supports(current)) {
             drawTintRows(context, mouseX, mouseY, config.modEnabled);
+        }
+        if (current == StyleCategory.PERFORMANCE) {
+            drawPerformanceRows(context, mouseX, mouseY);
         }
 
         int first = cardScroll * columns;
@@ -1583,6 +1593,56 @@ public class StylesScreen extends Screen {
             text(context, status, x + 4, py + PREVIEW + 14, active ? C_OK : C_WARN);
         }
         hits.add(new Hit(x, y, x + CARD_W, y + CARD_H, () -> chooseStyle(style)));
+    }
+
+    // ---- Performance-Reiter ----
+
+    /**
+     * Ueber den Performance-Packs: oben "Max FPS" und die Sichtweite, darunter je zwei Schalter fuer die
+     * Grafikoptionen. Die Schalter aendern die echten Minecraft-Optionen und wirken sofort (ohne Neuladen).
+     */
+    private void drawPerformanceRows(DrawContext context, int mouseX, int mouseY) {
+        int w = paneRight - paneX;
+        int half = (w - 4) / 2;
+        int y = top + HEADER_H + 42;
+        int y2 = y + ESSENTIAL_ROW_H - 2;
+
+        // Knopf "Max FPS": alles auf einmal auf schnell
+        boolean max = PerformanceSettings.isMaxFps();
+        boolean over = inside(mouseX, mouseY, paneX, y, paneX + half, y2);
+        if (max) {
+            roundBordered(context, paneX, y, paneX + half, y2, C_OK, C_CARD);
+        } else {
+            roundBordered(context, paneX, y, paneX + half, y2, C_ACCENT, over ? C_ACCENT : C_ACCENT_SOFT);
+        }
+        Text maxLabel = Text.translatable(max ? "arnestyles.performance.max_fps_done" : "arnestyles.performance.max_fps");
+        String maxText = this.textRenderer.trimToWidth(maxLabel.getString(), half - 8);
+        text(context, maxText, paneX + (half - this.textRenderer.getWidth(maxText)) / 2, y + 5, max ? C_OK : C_TEXT);
+        hits.add(new Hit(paneX, y, paneX + half, y2, PerformanceSettings::applyMaxFps));
+        if (over) {
+            tintHover = Text.translatable("arnestyles.performance.max_fps.desc");
+        }
+
+        if (drawSliderRow(context, PerformanceSettings.VIEW_DISTANCE, paneX + half + 4, y, w - half - 4, true, mouseX, mouseY, null)) {
+            tintHover = Text.translatable(PerformanceSettings.VIEW_DISTANCE.descriptionKey());
+        }
+
+        PerformanceSettings.Toggle[] toggles = PerformanceSettings.Toggle.values();
+        for (int i = 0; i < toggles.length; i++) {
+            PerformanceSettings.Toggle toggle = toggles[i];
+            int rowY = y + (1 + i / 2) * (ESSENTIAL_ROW_H + 2);
+            int x = i % 2 == 0 ? paneX : paneX + half + 4;
+            int rowW = i % 2 == 0 ? half : w - half - 4;
+            int rowY2 = rowY + ESSENTIAL_ROW_H - 2;
+            boolean rowOver = inside(mouseX, mouseY, x, rowY, x + rowW, rowY2);
+            round(context, x, rowY, x + rowW, rowY2, rowOver ? C_CARD_HOVER : C_CARD);
+            text(context, this.textRenderer.trimToWidth(Text.translatable(toggle.nameKey()).getString(), rowW - 40), x + 8, rowY + 5, C_TEXT);
+            drawSwitch(context, x + rowW - 28, rowY + 3, toggle.isOn(), false);
+            hits.add(new Hit(x, rowY, x + rowW, rowY2, toggle::toggle));
+            if (rowOver) {
+                tintHover = Text.translatable(toggle.descriptionKey());
+            }
+        }
     }
 
     // ---- Eigene Farbe (Stone, Deepslate, Gras, Feuer) ----
