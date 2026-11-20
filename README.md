@@ -31,6 +31,12 @@ Seit 3.0.0 sind die Packs **nicht** mehr in der Mod-Datei (sie ist dadurch unter
 `ARNESTYLES_CLOUD_URL=http://127.0.0.1:8765/` setzen und `python -m http.server 8765 --directory build/cloud-styles` starten.
 Wichtig: Das Repo muss öffentlich sein, sonst können Spieler nichts herunterladen.
 
-## License
+## Lizenz / License
 
-This template is available under the CC0 license. Feel free to learn from it and incorporate it in your own projects.
+**Alle Rechte vorbehalten.** ArneTweaks darfst du kostenlos herunterladen und spielen, aber nicht verändern,
+weiterverbreiten, neu hochladen oder in eigenen Projekten benutzen. Details: [LICENSE](LICENSE).
+
+**All rights reserved.** You may download and play ArneTweaks for free, but you may not modify, redistribute,
+re-upload or reuse it in your own projects. Details: [LICENSE](LICENSE).
+
+Versionen bis 3.0.0 wurden unter CC0 veröffentlicht und bleiben für genau diese Versionen CC0.
