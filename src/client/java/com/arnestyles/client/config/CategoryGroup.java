@@ -49,14 +49,17 @@ public enum CategoryGroup {
         StyleCategory.SHULKER, StyleCategory.POTIONS, StyleCategory.GLINT),
     /** Wie die Welt aussieht. */
     TERRAIN("textures/block/grass_block_top.png",
-        StyleCategory.STONE, StyleCategory.DEEPSLATE, StyleCategory.ORES, StyleCategory.GRASS, StyleCategory.SNOW, StyleCategory.FIRE, StyleCategory.SKY);
+        StyleCategory.STONE, StyleCategory.DEEPSLATE, StyleCategory.ORES, StyleCategory.GRASS, StyleCategory.SNOW, StyleCategory.FIRE, StyleCategory.SKY),
+    /** Mehr FPS: Grafik-Einstellungen und leichte Texture-Packs fuer schwache PCs. */
+    PERFORMANCE("textures/item/feather.png",
+        StyleCategory.PERFORMANCE);
 
     /**
      * Reihenfolge der Seitenleiste: Ordner und einzelne Kategorien gemischt.
      * Jede Kategorie, die hier nicht direkt steht, ist ueber mindestens einen Ordner erreichbar.
      */
     public static final List<Object> SIDEBAR = List.of(
-        VANILLA, UHC, POT, NETH_OP, SMP, SWORD, AXE, MACE, SPEAR_MACE, TERRAIN,
+        VANILLA, UHC, POT, NETH_OP, SMP, SWORD, AXE, MACE, SPEAR_MACE, TERRAIN, PERFORMANCE,
         StyleCategory.INVENTORY, StyleCategory.HUD, StyleCategory.CROSSHAIR,
         StyleCategory.PARTICLES, StyleCategory.SOUNDS, StyleCategory.ESSENTIALS
     );
