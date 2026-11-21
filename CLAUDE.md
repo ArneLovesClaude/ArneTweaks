@@ -39,18 +39,18 @@ Hinweis: Fabric-Doku zeigt Code oft mit Mojang-Namen. Beim Übernehmen in Yarn �
 
 ## Bauen und prüfen
 
-- Zum Prüfen von Änderungen: `.\gradlew.bat build -x installToMinecraft -x signUpdate`
+- Zum Prüfen von Änderungen: `.\gradlew.bat build -x installToMinecraft`
   - Wichtig: Das normale `build` startet danach `installToMinecraft` (kopiert die Jar nach `%appdata%\.minecraft\mods`
-    und **löscht alte ArneTweaks-Versionen dort**) und `signUpdate` (signiert mit dem privaten Schlüssel).
-    Beides nur ausführen, wenn Arne es ausdrücklich möchte.
+    und **löscht alte ArneTweaks-Versionen dort**). Nur ausführen, wenn Arne es ausdrücklich möchte.
+- Es gibt keinen Auto-Updater mehr (entfernt, weil Jar-Scanner ihn als verdächtig melden). `UpdateChecker` zeigt nur
+  einen Hinweis mit Link; keinen Code einbauen, der Jars herunterlädt, austauscht oder Prozesse startet.
 - Nach jeder Code-Änderung bauen und Fehler beheben, bevor du fertig meldest.
 - Im Spiel testen: `.\gradlew.bat runClient` (mit Iris/Sodium: `-PwithIris`).
 - CI (`.github/workflows/build.yml`) baut mit JDK 25 auf Ubuntu.
 
 ## Regeln
 
-- Den privaten Update-Schlüssel (`%USERPROFILE%\.arnetweaks\update-signing.key`) nie lesen, ausgeben oder committen.
-- `updateKeygen` nie ausführen (überschreibt sonst den Schlüssel für Updates).
+- Den alten privaten Update-Schlüssel (`%USERPROFILE%\.arnetweaks\update-signing.key`) nie lesen, ausgeben oder committen.
 - Performance: In Render-Mixins und pro Frame/Tick aufgerufenem Code keine Objekte unnötig neu anlegen,
   keine Datei- oder Netzwerkzugriffe. Teure Arbeit cachen.
 - Lizenz ist „Alle Rechte vorbehalten“. Keinen fremden Code ohne Lizenzprüfung übernehmen; fremde Assets in `THIRD_PARTY_NOTICES.txt` vermerken.

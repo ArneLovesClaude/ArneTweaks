@@ -26,7 +26,17 @@ import java.util.stream.Stream;
  */
 public final class PresetManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON_COMPACT = new Gson();
     public static final int MAX_NAME_LENGTH = 24;
+
+    /**
+     * Felder, die nicht mit einem Preset/Code mitgehen: persoenliche Sachen (Wegpunkte, Server-Zuordnungen),
+     * Menue-Zustand und Felder, die das Preset sowieso einzeln speichert.
+     */
+    private static final java.util.Set<String> NOT_SHARED = java.util.Set.of(
+        "configVersion", "modEnabled", "expandedGroups", "activeTab", "activeCategory", "sidebarOrder",
+        "waypoints", "serverPresets", "lastPreset", "customHudSetupDone", "introShown", "guiDesignV2",
+        "selectedStyles", "enabledCategories", "essentials", "lowFireOffset", "totemPopScale", "totemParticles", "heldItemScale");
 
     /** Inhalt einer Preset-Datei. */
     private static final class Snapshot {
@@ -38,6 +48,78 @@ public final class PresetManager {
         float totemPopScale = 1.0f;
         float totemParticles = 1.0f;
         float heldItemScale = 1.0f;
+        /** Alle anderen Einstellungen (Mods, Farben, HUD-Positionen ...), nur was vom Standard abweicht. Fehlt bei alten Presets. */
+        com.google.gson.JsonObject settings;
+    }
+
+    /** Einstellungen, die vom Standard abweichen (ohne persoenliche Felder). */
+    private static com.google.gson.JsonObject settingsDiff(ArneStylesConfig config) {
+        ArneStylesConfig defaults = new ArneStylesConfig();
+        defaults.sanitize();
+        com.google.gson.JsonObject current = GSON_COMPACT.toJsonTree(config).getAsJsonObject();
+        com.google.gson.JsonObject standard = GSON_COMPACT.toJsonTree(defaults).getAsJsonObject();
+        com.google.gson.JsonObject diff = new com.google.gson.JsonObject();
+        for (Map.Entry<String, com.google.gson.JsonElement> entry : current.entrySet()) {
+            if (!NOT_SHARED.contains(entry.getKey()) && !entry.getValue().equals(standard.get(entry.getKey()))) {
+                diff.add(entry.getKey(), entry.getValue());
+            }
+        }
+        return diff;
+    }
+
+    /** Neue Config: Standardwerte + Einstellungen aus dem Preset, persoenliche Felder bleiben wie bisher. */
+    private static ArneStylesConfig withSettings(ArneStylesConfig current, com.google.gson.JsonObject settings) {
+        ArneStylesConfig defaults = new ArneStylesConfig();
+        defaults.sanitize();
+        com.google.gson.JsonObject merged = GSON_COMPACT.toJsonTree(defaults).getAsJsonObject();
+        for (Map.Entry<String, com.google.gson.JsonElement> entry : settings.entrySet()) {
+            if (!NOT_SHARED.contains(entry.getKey()) && merged.has(entry.getKey())) {
+                merged.add(entry.getKey(), entry.getValue());
+            }
+        }
+        com.google.gson.JsonObject mine = GSON_COMPACT.toJsonTree(current).getAsJsonObject();
+        for (String key : NOT_SHARED) {
+            if (mine.has(key)) {
+                merged.add(key, mine.get(key));
+            }
+        }
+        ArneStylesConfig result = GSON_COMPACT.fromJson(merged, ArneStylesConfig.class);
+        result.sanitize();
+        return result;
+    }
+
+    private static Snapshot snapshot(String name) {
+        ArneStylesConfig config = ConfigManager.get();
+        Snapshot snapshot = new Snapshot();
+        snapshot.name = name;
+        snapshot.selectedStyles.putAll(config.selectedStyles);
+        snapshot.enabledCategories.putAll(config.enabledCategories);
+        snapshot.essentials.putAll(config.essentials);
+        snapshot.lowFireOffset = config.lowFireOffset;
+        snapshot.totemPopScale = config.totemPopScale;
+        snapshot.totemParticles = config.totemParticles;
+        snapshot.heldItemScale = config.heldItemScale;
+        snapshot.settings = settingsDiff(config);
+        return snapshot;
+    }
+
+    private static String pack(String json) throws IOException {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.GZIPOutputStream gzip = new java.util.zip.GZIPOutputStream(bytes)) {
+            gzip.write(json.getBytes(StandardCharsets.UTF_8));
+        }
+        return CODE_PREFIX + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes.toByteArray());
+    }
+
+    /** Die aktuellen Einstellungen direkt als Code (ohne vorher ein Preset zu speichern). */
+    public static @org.jspecify.annotations.Nullable String currentCode(String rawName) {
+        String name = cleanName(rawName);
+        try {
+            return pack(GSON_COMPACT.toJson(snapshot(name.isEmpty() ? "Import" : name)));
+        } catch (IOException | RuntimeException e) {
+            ArneStyles.LOGGER.warn("Einstellungen konnten nicht als Code exportiert werden.", e);
+            return null;
+        }
     }
 
     public record Preset(String name, Path file) {
@@ -81,16 +163,7 @@ public final class PresetManager {
         if (name.isEmpty()) {
             return false;
         }
-        ArneStylesConfig config = ConfigManager.get();
-        Snapshot snapshot = new Snapshot();
-        snapshot.name = name;
-        snapshot.selectedStyles.putAll(config.selectedStyles);
-        snapshot.enabledCategories.putAll(config.enabledCategories);
-        snapshot.essentials.putAll(config.essentials);
-        snapshot.lowFireOffset = config.lowFireOffset;
-        snapshot.totemPopScale = config.totemPopScale;
-        snapshot.totemParticles = config.totemParticles;
-        snapshot.heldItemScale = config.heldItemScale;
+        Snapshot snapshot = snapshot(name);
         try {
             Files.createDirectories(dir());
             try (Writer writer = Files.newBufferedWriter(dir().resolve(name + ".json"), StandardCharsets.UTF_8)) {
@@ -103,12 +176,46 @@ public final class PresetManager {
         }
     }
 
+    /** Benennt ein Preset um. false, wenn der Name leer ist oder schon vergeben. */
+    public static boolean rename(Preset preset, String rawName) {
+        String name = cleanName(rawName);
+        if (name.isEmpty() || name.equals(preset.name())) {
+            return false;
+        }
+        Path target = dir().resolve(name + ".json");
+        if (Files.exists(target)) {
+            return false;
+        }
+        try {
+            com.google.gson.JsonObject json;
+            try (java.io.Reader reader = Files.newBufferedReader(preset.file(), StandardCharsets.UTF_8)) {
+                json = GSON.fromJson(reader, com.google.gson.JsonObject.class);
+            }
+            if (json == null) {
+                return false;
+            }
+            json.addProperty("name", name);
+            try (Writer writer = Files.newBufferedWriter(target, StandardCharsets.UTF_8)) {
+                GSON.toJson(json, writer);
+            }
+            Files.deleteIfExists(preset.file());
+            return true;
+        } catch (IOException | RuntimeException e) {
+            ArneStyles.LOGGER.warn("Preset {} konnte nicht umbenannt werden.", preset.name(), e);
+            return false;
+        }
+    }
+
     /** Laedt ein Preset in die aktuelle Config. Der Hauptschalter und die offene Kategorie bleiben, wie sie sind. */
     public static boolean load(Preset preset) {
         try (Reader reader = Files.newBufferedReader(preset.file(), StandardCharsets.UTF_8)) {
             Snapshot snapshot = GSON.fromJson(reader, Snapshot.class);
             if (snapshot == null) {
                 return false;
+            }
+            if (snapshot.settings != null) {
+                // Neueres Preset: alle Einstellungen uebernehmen (Rest auf Standard)
+                ConfigManager.replace(withSettings(ConfigManager.get(), snapshot.settings));
             }
             ArneStylesConfig config = ConfigManager.get();
             config.selectedStyles = new LinkedHashMap<>(snapshot.selectedStyles != null ? snapshot.selectedStyles : Map.of());
@@ -119,6 +226,7 @@ public final class PresetManager {
             config.totemParticles = snapshot.totemParticles;
             config.heldItemScale = snapshot.heldItemScale;
             config.sanitize();
+            com.arnestyles.client.mods.CustomCrosshair.invalidate();
             ConfigManager.save();
             return true;
         } catch (IOException | RuntimeException e) {
@@ -133,13 +241,10 @@ public final class PresetManager {
     /** Preset als kurzer Text zum Teilen: "ARNE1:" + Base64 der gepackten Preset-Datei. */
     public static @org.jspecify.annotations.Nullable String exportCode(Preset preset) {
         try {
-            byte[] json = Files.readAllBytes(preset.file());
-            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
-            try (java.util.zip.GZIPOutputStream gzip = new java.util.zip.GZIPOutputStream(bytes)) {
-                gzip.write(json);
-            }
-            return CODE_PREFIX + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes.toByteArray());
-        } catch (IOException e) {
+            String json = Files.readString(preset.file(), StandardCharsets.UTF_8);
+            // Kompakt (ohne Einrueckung), damit der Code kuerzer wird
+            return pack(GSON_COMPACT.toJson(com.google.gson.JsonParser.parseString(json)));
+        } catch (IOException | RuntimeException e) {
             ArneStyles.LOGGER.warn("Preset {} konnte nicht als Code exportiert werden.", preset.name(), e);
             return null;
         }

@@ -24,6 +24,10 @@ https://github.com/Virtuoel/NoFog
 Cubes Without Borders (Mods > Cubes Without Borders), Kern nachgebaut
 https://github.com/Kira-NT/cubes-without-borders
 
+CustomHud 4.1.1, Port fuer 1.21.11 (Mods > HUD > CustomHud)
+https://github.com/Minenash/CustomHUD
+Unveraendert als eigene Mod-Datei mitgeliefert: META-INF/jars/custom_hud-4.1.1+1.21.11.jar
+
 Diese Projekte stehen unter der MIT-Lizenz:
 
 MIT License
@@ -36,6 +40,7 @@ Copyright (c) 2021 BerdinskiyBear (Armor HUD)
 Copyright (c) 2025 OneSaw (No Darkness)
 Copyright (c) 2020 - 2024 Virtuoel (NoFog)
 Copyright (c) 2024-2026 Kira NT (Cubes Without Borders)
+Copyright (c) 2020 Minenash (CustomHud)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

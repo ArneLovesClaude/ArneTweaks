@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Update-Hinweis: fragt beim Start einmal das neueste Release auf GitHub ab.
  * Ist es neuer als die laufende Version, kommt im Hauptmenue ein Toast und beim Betreten
- * einer Welt eine Chat-Nachricht mit Link zur Download-Seite. Es wird nichts automatisch installiert.
+ * einer Welt eine Chat-Nachricht mit Link zur Download-Seite. Installiert wird von Hand (oder ueber den Launcher).
  */
 public final class UpdateChecker {
     private static final String API = "https://api.github.com/repos/ArneLovesClaude/ArneTweaks/releases/latest";
@@ -57,9 +57,9 @@ public final class UpdateChecker {
             Text link = Text.translatable("arnestyles.update.link").styled(style -> style
                 .withColor(Formatting.AQUA).withUnderline(true)
                 .withClickEvent(new ClickEvent.OpenUrl(URI.create(RELEASES))));
-            client.execute(() -> client.inGameHud.getChatHud().addMessage(
-                Text.translatable("arnestyles.update.chat", version, currentVersion()).formatted(Formatting.GOLD)
-                    .append(" ").append(link)));
+            Text message = Text.translatable("arnestyles.update.chat", version, currentVersion()).formatted(Formatting.GOLD)
+                .append(" ").append(link);
+            client.execute(() -> client.inGameHud.getChatHud().addMessage(message));
         });
     }
 
@@ -83,6 +83,10 @@ public final class UpdateChecker {
             }
             JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
             String latest = json.get("tag_name").getAsString().replaceFirst("^[vV]", "");
+            // Nur eine echte Versionsnummer anzeigen (kein beliebiger Text im Chat)
+            if (!latest.matches("[0-9]+([.][0-9]+){0,3}")) {
+                return;
+            }
             if (isNewer(latest, current)) {
                 newer = latest;
                 ArneStyles.LOGGER.info("Neue ArneTweaks-Version verfuegbar: {} (installiert: {})", latest, current);

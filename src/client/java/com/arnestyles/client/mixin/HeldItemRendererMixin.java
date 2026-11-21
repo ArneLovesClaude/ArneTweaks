@@ -12,9 +12,14 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Regler Item-Groesse: Items in der Hand (Egoperspektive) groesser oder kleiner zeichnen. */
+/**
+ * Regler Item-Groesse: Items in der Hand (Egoperspektive) groesser oder kleiner zeichnen.
+ * Hand-Editor: zusaetzlich Position, Drehung und Groesse pro Item (linke Hand gespiegelt).
+ */
 @Mixin(HeldItemRenderer.class)
 public abstract class HeldItemRendererMixin {
+    @org.spongepowered.asm.mixin.Unique
+    private boolean arnestyles$pushed;
 
     private static boolean arnestyles$scaled(ItemDisplayContext mode) {
         return mode.isFirstPerson() && Math.abs(EssentialSlider.HELD_ITEM_SIZE.effective() - 1.0f) > 0.001f;
@@ -26,9 +31,23 @@ public abstract class HeldItemRendererMixin {
     )
     private void arnestyles$scaleHeldItem(LivingEntity entity, ItemStack stack, ItemDisplayContext mode, MatrixStack matrices,
                                           OrderedRenderCommandQueue queue, int light, CallbackInfo ci) {
+        com.arnestyles.client.config.ArneStylesConfig.HandTransform t = mode.isFirstPerson()
+            ? com.arnestyles.client.mods.HandTransforms.get(stack) : null;
+        arnestyles$pushed = arnestyles$scaled(mode) || t != null;
+        if (!arnestyles$pushed) {
+            return;
+        }
+        matrices.push();
+        if (t != null) {
+            float side = mode == ItemDisplayContext.FIRST_PERSON_LEFT_HAND ? -1.0f : 1.0f;
+            matrices.translate(t.x * side, t.y, t.z);
+            matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_X.rotationDegrees(t.rotX));
+            matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Y.rotationDegrees(t.rotY * side));
+            matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(t.rotZ * side));
+            matrices.scale(t.scale, t.scale, t.scale);
+        }
         if (arnestyles$scaled(mode)) {
             float scale = EssentialSlider.HELD_ITEM_SIZE.effective();
-            matrices.push();
             matrices.scale(scale, scale, scale);
         }
     }
@@ -39,7 +58,8 @@ public abstract class HeldItemRendererMixin {
     )
     private void arnestyles$restoreHeldItem(LivingEntity entity, ItemStack stack, ItemDisplayContext mode, MatrixStack matrices,
                                             OrderedRenderCommandQueue queue, int light, CallbackInfo ci) {
-        if (arnestyles$scaled(mode)) {
+        if (arnestyles$pushed) {
+            arnestyles$pushed = false;
             matrices.pop();
         }
     }

@@ -20,6 +20,7 @@ public abstract class PlayerEntityRendererMixin {
     private void arnestyles$totemPops(PlayerLikeEntity entity, PlayerEntityRenderState state, float tickProgress, CallbackInfo ci) {
         if (state.displayName != null) {
             state.displayName = TotemCounter.withPops(entity.getUuid(), state.displayName);
+            state.displayName = com.arnestyles.client.mods.Nametags.decorate(entity, state.displayName);
         }
     }
 }

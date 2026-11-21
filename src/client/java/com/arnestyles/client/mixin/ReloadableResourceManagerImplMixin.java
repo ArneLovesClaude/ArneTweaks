@@ -37,6 +37,11 @@ public abstract class ReloadableResourceManagerImplMixin {
         ResourcePack shaderPack = ArneShaders.createPack();
         // Eigene Farben (Stone, Deepslate, Gras, Feuer) ganz oben, damit sie ueber dem gewaehlten Style liegen
         ResourcePack tintPack = TintedTextures.createPack();
+        ResourcePack soundPack = com.arnestyles.client.mods.TotemPop.createSoundPack();
+        if (soundPack != null) {
+            stylePacks = new ArrayList<>(stylePacks);
+            stylePacks.add(soundPack);
+        }
         if (stylePacks.isEmpty() && shaderPack == null && tintPack == null) {
             return packs;
         }

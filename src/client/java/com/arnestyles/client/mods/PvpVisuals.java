@@ -45,11 +45,13 @@ public final class PvpVisuals {
         SoundEvents.ENTITY_ENDERMAN_TELEPORT, SoundEvents.BLOCK_RESPAWN_ANCHOR_DEPLETE.value(), SoundEvents.ENTITY_WITHER_SPAWN,
         SoundEvents.ENTITY_ENDER_DRAGON_GROWL, SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE, SoundEvents.ENTITY_GHAST_SCREAM,
         SoundEvents.ENTITY_VILLAGER_NO, SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), SoundEvents.BLOCK_NOTE_BLOCK_XYLOPHONE.value(),
-        SoundEvents.ENTITY_CHICKEN_EGG
+        SoundEvents.ENTITY_CHICKEN_EGG,
+        // Eigene Datei: config/arnestyles/sounds/totem_pop.ogg
+        net.minecraft.sound.SoundEvent.of(net.minecraft.util.Identifier.of("arnestyles", "custom_totem_pop"))
     };
     public static final String[] POP_SOUND_KEYS = {"normal", "bell", "anvil", "levelup", "pling", "xp", "chime", "firework", "twinkle",
         "explode", "glass", "item_break", "crit", "arrow", "beacon", "challenge", "teleport", "anchor", "wither", "dragon", "guardian",
-        "ghast", "villager", "bit", "xylophone", "egg"};
+        "ghast", "villager", "bit", "xylophone", "egg", "custom"};
 
     /** Gewaehlter Pop-Sound (Index in POP_SOUNDS). */
     public static int popSoundIndex() {
@@ -198,6 +200,9 @@ public final class PvpVisuals {
 
     public static SoundEvent popSound() {
         int index = Math.round(ConfigManager.get().totemPopSound);
+        if (index == POP_SOUNDS.length - 1 && !TotemPop.hasCustomSound()) {
+            return SoundEvents.ITEM_TOTEM_USE;
+        }
         return ConfigManager.get().modEnabled && index > 0 && index < POP_SOUNDS.length ? POP_SOUNDS[index] : SoundEvents.ITEM_TOTEM_USE;
     }
 

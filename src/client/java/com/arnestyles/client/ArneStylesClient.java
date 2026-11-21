@@ -36,8 +36,14 @@ public class ArneStylesClient implements ClientModInitializer {
         TotemCounter.register();
         AppleSkin.register();
         InfoHud.register();
+        com.arnestyles.client.mods.Waypoints.register();
+        com.arnestyles.client.mods.SpotifyHud.register();
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STARTED.register(
+            com.arnestyles.client.mods.CustomHudBridge::firstSetup);
+        com.arnestyles.client.mods.ServerPresets.register();
         PvpVisuals.register();
         Comfort.register();
+        com.arnestyles.client.gui.IntroScreen.register();
         ShaderPacks.ensureDir();
         ArneShaders.writeReadmeIfMissing();
         TintedTextures.registerGrassColors();

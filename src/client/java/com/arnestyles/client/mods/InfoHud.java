@@ -33,17 +33,11 @@ import java.util.Locale;
  * verschieben und skalieren. CPS-Idee nach KeysPerSecond (RoanH), Code komplett neu geschrieben.
  */
 public final class InfoHud {
-    private static final int BG = 0x90000000;
-    private static final int BG_PRESSED = 0xD0FFFFFF;
-    private static final int TEXT = 0xFFFFFFFF;
     private static final int TEXT_PRESSED = 0xFF000000;
     private static final int KEY = 22;
     private static final int GAP = 2;
     private static final long CPS_WINDOW_MS = 1000L;
-    private static final int COMBO_TIMEOUT_TICKS = 60;
     private static final long TARGET_MEMORY_MS = 8000L;
-    /** Unter so viel Prozent Haltbarkeit warnt die Ruestungs-Warnung. */
-    private static final float ARMOR_WARN_FRACTION = 0.10f;
     private static final EquipmentSlot[] ARMOR = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
     private static final ItemStack PEARL = new ItemStack(Items.ENDER_PEARL);
 
@@ -68,6 +62,9 @@ public final class InfoHud {
             return ActionResult.PASS;
         });
         ClientTickEvents.END_CLIENT_TICK.register(InfoHud::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(DeathPoint::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(ItemCounter::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(ExtraHud::tick);
     }
 
     // ---- Zaehlen ----
@@ -95,6 +92,7 @@ public final class InfoHud {
     }
 
     private static void onAttack(LivingEntity target) {
+        HitParticles.onAttack(target);
         combo++;
         ticksSinceHit = 0;
         lastTarget = target;
@@ -110,7 +108,7 @@ public final class InfoHud {
         }
         ticksSinceHit++;
         // Combo endet, wenn man selbst getroffen wird oder 3 Sekunden nichts trifft
-        if (player.hurtTime > lastHurtTime || ticksSinceHit > COMBO_TIMEOUT_TICKS) {
+        if (player.hurtTime > lastHurtTime || ticksSinceHit > Math.round(com.arnestyles.client.config.ConfigManager.get().comboTimeout * 20.0f)) {
             combo = 0;
         }
         lastHurtTime = player.hurtTime;
@@ -133,7 +131,7 @@ public final class InfoHud {
             return false;
         }
         int max = stack.getMaxDamage();
-        return max > 0 && (max - stack.getDamage()) < max * ARMOR_WARN_FRACTION;
+        return max > 0 && (max - stack.getDamage()) < max * com.arnestyles.client.config.ConfigManager.get().armorWarningPercent;
     }
 
     // ---- Zeichnen ----
@@ -177,6 +175,38 @@ public final class InfoHud {
         if (ModSetting.Toggle.TARGET_HUD.isActive()) {
             renderTarget(context, client, cx, cy);
         }
+        String death = DeathPoint.label(client);
+        if (death != null) {
+            label(context, client, HudLayout.Element.DEATH, col, row + 56, death);
+        }
+        java.util.List<String> waypoints = Waypoints.labels(client);
+        if (!waypoints.isEmpty()) {
+            renderWaypoints(context, client, col, row + 70, waypoints);
+        }
+        SpotifyHud.render(context, client, 4, context.getScaledWindowHeight() / 2 - 20);
+        ItemCounter.render(context, client);
+        ExtraHud.render(context, client);
+        VanillaHud.renderCooldown(context, client, tickCounter);
+    }
+
+    /** Wegpunkte als ein verschiebbarer Block (mehrere Zeilen). */
+    private static void renderWaypoints(DrawContext context, MinecraftClient client, int x, int y, java.util.List<String> lines) {
+        TextRenderer font = client.textRenderer;
+        int w = 0;
+        for (String line : lines) {
+            w = Math.max(w, font.getWidth(line));
+        }
+        w += 6;
+        int h = lines.size() * 11 + 2;
+        HudLayout.begin(context, HudLayout.Element.WAYPOINTS, x, y, w, h);
+        try {
+            HudStyle.background(context, x, y, x + w, y + h);
+            for (int i = 0; i < lines.size(); i++) {
+                HudStyle.text(context, font, lines.get(i), x + 3, y + 2 + i * 11, HudStyle.text());
+            }
+        } finally {
+            HudLayout.end(context);
+        }
     }
 
     /** Text mit dunklem Hintergrund als verschiebbare Anzeige. */
@@ -186,8 +216,8 @@ public final class InfoHud {
         int h = 12;
         HudLayout.begin(context, element, x, y, w, h);
         try {
-            context.fill(x, y, x + w, y + h, BG);
-            context.drawTextWithShadow(font, text, x + 3, y + 2, TEXT);
+            HudStyle.background(context, x, y, x + w, y + h);
+            HudStyle.text(context, font, text, x + 3, y + 2, HudStyle.text());
         } finally {
             HudLayout.end(context);
         }
@@ -203,8 +233,11 @@ public final class InfoHud {
 
     private static String coords(MinecraftClient client) {
         PlayerEntity p = client.player;
-        String dir = Text.translatable("arnestyles.hud.dir." + p.getHorizontalFacing().asString()).getString();
-        return String.format(Locale.ROOT, "XYZ %d / %d / %d  %s", MathHelper.floor(p.getX()), MathHelper.floor(p.getY()), MathHelper.floor(p.getZ()), dir);
+        String xyz = String.format(Locale.ROOT, "XYZ %d / %d / %d", MathHelper.floor(p.getX()), MathHelper.floor(p.getY()), MathHelper.floor(p.getZ()));
+        if (!com.arnestyles.client.config.ConfigManager.get().coordsDirection) {
+            return xyz;
+        }
+        return xyz + "  " + Text.translatable("arnestyles.hud.dir." + p.getHorizontalFacing().asString()).getString();
     }
 
     /** W, A, S, D, Maustasten mit CPS und Leertaste. Gedrueckte Tasten werden hell. */
@@ -212,8 +245,9 @@ public final class InfoHud {
         int x = 4;
         int y = 4;
         int w = 3 * KEY + 2 * GAP;
-        int mouseH = ModSetting.Toggle.KEYSTROKES_CPS.isActive() ? KEY : 16;
-        int h = 2 * KEY + mouseH + 10 + 3 * GAP;
+        var cfg = com.arnestyles.client.config.ConfigManager.get();
+        int mouseH = !cfg.keystrokesMouse ? 0 : ModSetting.Toggle.KEYSTROKES_CPS.isActive() ? KEY : 16;
+        int h = 2 * KEY + (cfg.keystrokesMouse ? mouseH + GAP : 0) + (cfg.keystrokesSpace ? 10 + GAP : 0);
         HudLayout.begin(context, HudLayout.Element.KEYSTROKES, x, y, w, h);
         try {
             var o = client.options;
@@ -223,14 +257,18 @@ public final class InfoHud {
             key(context, client, x + KEY + GAP, y2, KEY, KEY, keyName(o.backKey), o.backKey.isPressed());
             key(context, client, x + 2 * (KEY + GAP), y2, KEY, KEY, keyName(o.rightKey), o.rightKey.isPressed());
             int y3 = y2 + KEY + GAP;
-            int half = (w - GAP) / 2;
-            boolean showCps = ModSetting.Toggle.KEYSTROKES_CPS.isActive();
-            mouseKey(context, client, x, y3, half, mouseH, "LMB", cps(LEFT_CLICKS), o.attackKey.isPressed(), showCps);
-            mouseKey(context, client, x + half + GAP, y3, w - half - GAP, mouseH, "RMB", cps(RIGHT_CLICKS), o.useKey.isPressed(), showCps);
-            int y4 = y3 + mouseH + GAP;
-            boolean jump = o.jumpKey.isPressed();
-            context.fill(x, y4, x + w, y4 + 10, jump ? BG_PRESSED : BG);
-            context.fill(x + w / 2 - 10, y4 + 4, x + w / 2 + 10, y4 + 5, jump ? TEXT_PRESSED : TEXT);
+            if (cfg.keystrokesMouse) {
+                int half = (w - GAP) / 2;
+                boolean showCps = ModSetting.Toggle.KEYSTROKES_CPS.isActive();
+                mouseKey(context, client, x, y3, half, mouseH, "LMB", cps(LEFT_CLICKS), o.attackKey.isPressed(), showCps);
+                mouseKey(context, client, x + half + GAP, y3, w - half - GAP, mouseH, "RMB", cps(RIGHT_CLICKS), o.useKey.isPressed(), showCps);
+                y3 += mouseH + GAP;
+            }
+            if (cfg.keystrokesSpace) {
+                boolean jump = o.jumpKey.isPressed();
+                HudStyle.background(context, x, y3, x + w, y3 + 10, jump ? HudStyle.accent() : HudStyle.bg());
+                context.fill(x + w / 2 - 10, y3 + 4, x + w / 2 + 10, y3 + 5, jump ? TEXT_PRESSED : HudStyle.text());
+            }
         } finally {
             HudLayout.end(context);
         }
@@ -242,21 +280,22 @@ public final class InfoHud {
     }
 
     private static void key(DrawContext context, MinecraftClient client, int x, int y, int w, int h, String label, boolean pressed) {
-        context.fill(x, y, x + w, y + h, pressed ? BG_PRESSED : BG);
+        HudStyle.background(context, x, y, x + w, y + h, pressed ? HudStyle.accent() : HudStyle.bg());
         TextRenderer font = client.textRenderer;
-        context.drawText(font, label, x + (w - font.getWidth(label)) / 2, y + (h - 8) / 2, pressed ? TEXT_PRESSED : TEXT, !pressed);
+        context.drawText(font, label, x + (w - font.getWidth(label)) / 2, y + (h - 8) / 2, pressed ? TEXT_PRESSED : HudStyle.text(),
+            !pressed && HudStyle.shadow());
     }
 
     private static void mouseKey(DrawContext context, MinecraftClient client, int x, int y, int w, int h, String label, int cps, boolean pressed,
                                  boolean showCps) {
-        context.fill(x, y, x + w, y + h, pressed ? BG_PRESSED : BG);
+        HudStyle.background(context, x, y, x + w, y + h, pressed ? HudStyle.accent() : HudStyle.bg());
         TextRenderer font = client.textRenderer;
-        int color = pressed ? TEXT_PRESSED : TEXT;
+        int color = pressed ? TEXT_PRESSED : HudStyle.text();
         if (!showCps) {
-            context.drawText(font, label, x + (w - font.getWidth(label)) / 2, y + (h - 8) / 2, color, !pressed);
+            context.drawText(font, label, x + (w - font.getWidth(label)) / 2, y + (h - 8) / 2, color, !pressed && HudStyle.shadow());
             return;
         }
-        context.drawText(font, label, x + (w - font.getWidth(label)) / 2, y + 3, color, !pressed);
+        context.drawText(font, label, x + (w - font.getWidth(label)) / 2, y + 3, color, !pressed && HudStyle.shadow());
         String value = cps + " CPS";
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(x + w / 2.0f, y + 13);
@@ -285,8 +324,8 @@ public final class InfoHud {
             context.drawItem(PEARL, 0, 0);
             context.getMatrices().popMatrix();
             int bx = x + 14;
-            context.fill(bx, y + 4, x + w, y + 8, BG);
-            context.fill(bx, y + 4, bx + Math.round((x + w - bx) * progress), y + 8, 0xFF2DD4BF);
+            context.fill(bx, y + 4, x + w, y + 8, HudStyle.bg());
+            context.fill(bx, y + 4, bx + Math.round((x + w - bx) * progress), y + 8, HudStyle.accent());
         } finally {
             HudLayout.end(context);
         }
@@ -315,8 +354,8 @@ public final class InfoHud {
         int y = cy - 40;
         HudLayout.begin(context, HudLayout.Element.ARMOR_WARNING, x, y, w, 12);
         try {
-            context.fill(x, y, x + w, y + 12, blink ? 0xC0B91C1C : BG);
-            context.drawTextWithShadow(font, text, x + 3, y + 2, blink ? TEXT : 0xFFFF6B6B);
+            HudStyle.background(context, x, y, x + w, y + 12, blink ? 0xC0B91C1C : HudStyle.bg());
+            HudStyle.text(context, font, text, x + 3, y + 2, blink ? HudStyle.text() : 0xFFFF6B6B);
         } finally {
             HudLayout.end(context);
         }
@@ -345,9 +384,9 @@ public final class InfoHud {
         int y = cy + 16;
         HudLayout.begin(context, HudLayout.Element.TARGET, x, y, w, h);
         try {
-            context.fill(x, y, x + w, y + h, BG);
+            HudStyle.background(context, x, y, x + w, y + h);
             String name = font.trimToWidth(target.getDisplayName().getString(), w - 50);
-            context.drawTextWithShadow(font, name, x + 4, y + 4, TEXT);
+            HudStyle.text(context, font, name, x + 4, y + 4, HudStyle.text());
             float health = target.getHealth();
             float absorption = target.getAbsorptionAmount();
             float max = Math.max(1.0f, target.getMaxHealth());

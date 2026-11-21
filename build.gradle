@@ -16,6 +16,8 @@ repositories {
 		url = "https://api.modrinth.com/maven"
 		content { includeGroup "maven.modrinth" }
 	}
+	// Lokale Mod-Dateien in libs/ (CustomHUD-Port fuer 1.21.11)
+	flatDir { dirs "libs" }
 }
 
 loom {
@@ -36,6 +38,10 @@ dependencies {
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 	modCompileOnly "com.terraformersmc:modmenu:17.0.0-beta.1"
+	// CustomHUD von Minenash (MIT), Port fuer 1.21.11: wird in die ArneTweaks-Jar gepackt (Jar-in-Jar).
+	// ArneTweaks ruft es nur per Reflection auf, deshalb nicht zum Kompilieren noetig.
+	include "local:custom_hud:4.1.1+1.21.11"
+	modLocalRuntime "local:custom_hud:4.1.1+1.21.11"
 	// Iris und Sodium nur zum Testen der Iris-Shaderpacks: .\gradlew.bat runClient -PwithIris
 	if (project.hasProperty("withIris")) {
 		modLocalRuntime "maven.modrinth:sodium:mc1.21.11-0.8.14-fabric"
