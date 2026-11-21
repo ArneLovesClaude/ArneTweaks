@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Wegpunkte: Taste (Standard N) oder /arnetweaks waypoint add <name> merkt sich die aktuelle Position.
+ * Wegpunkte: eigene Taste (standardmaessig frei) oder /arnetweaks waypoint add <name> merkt sich die aktuelle Position.
  * Das HUD zeigt die naechsten drei mit Entfernung und Richtung. Getrennt nach Welt bzw. Server und Dimension.
  * Reine Anzeige, kein Teleport.
  */
