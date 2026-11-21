@@ -448,6 +448,8 @@ public final class ArneStylesConfig {
 
     /** Einfuehrung beim ersten Start schon gezeigt (oder uebersprungen). */
     public boolean introShown = false;
+    /** Menue-Taste wegen Iris schon einmal von K auf Rechts-Shift verlegt (nur einmal, danach entscheidet der Spieler). */
+    public boolean irisKeyMoved = false;
 
     /** Bringt geladene Werte in einen gueltigen Zustand und fuellt fehlende Eintraege auf. */
     public void sanitize() {

@@ -35,7 +35,7 @@ public final class PresetManager {
      */
     private static final java.util.Set<String> NOT_SHARED = java.util.Set.of(
         "configVersion", "modEnabled", "expandedGroups", "activeTab", "activeCategory", "sidebarOrder",
-        "waypoints", "serverPresets", "lastPreset", "customHudSetupDone", "introShown", "guiDesignV2",
+        "waypoints", "serverPresets", "lastPreset", "customHudSetupDone", "introShown", "irisKeyMoved", "guiDesignV2",
         "selectedStyles", "enabledCategories", "essentials", "lowFireOffset", "totemPopScale", "totemParticles", "heldItemScale");
 
     /** Inhalt einer Preset-Datei. */
