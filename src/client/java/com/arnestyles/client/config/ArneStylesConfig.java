@@ -110,6 +110,27 @@ public final class ArneStylesConfig {
     /** Anteil des alten Bildes bei 60 FPS (0.1 bis 0.9). */
     public float motionBlurStrength = 0.5f;
 
+    /** Hand-Editor: Position, Drehung und Groesse pro Item in der Hand (Egoperspektive), Schluessel ist die Item-ID. */
+    public Map<String, HandTransform> handTransforms = new LinkedHashMap<>();
+
+    /** Verschiebung in Bloecken, Drehung in Grad, Groesse als Faktor (1.0 = normal). */
+    public static final class HandTransform {
+        public float x = 0.0f;
+        public float y = 0.0f;
+        public float z = 0.0f;
+        public float rotX = 0.0f;
+        public float rotY = 0.0f;
+        public float rotZ = 0.0f;
+        public float scale = 1.0f;
+
+        public boolean isDefault() {
+            return x == 0 && y == 0 && z == 0 && rotX == 0 && rotY == 0 && rotZ == 0 && scale == 1.0f;
+        }
+    }
+
+    /** Saison-Designs: im Dezember Weihnachten, um Ostern Ostern, im Oktober Halloween (das eigene Design bleibt gespeichert). */
+    public boolean seasonalThemes = false;
+
     /** Position und Groesse der eigenen HUD-Anzeigen (HUD-Editor), Schluessel ist die Anzeige (armor_hud, totem_counter). */
     public Map<String, HudPosition> hudPositions = new LinkedHashMap<>();
 
@@ -136,6 +157,10 @@ public final class ArneStylesConfig {
         public int mode = 0;
         /** Nur bei Erzen: nur die Erz-Flecken einfaerben, der Stein-Hintergrund bleibt. */
         public boolean oreSpots = true;
+        /** Regenbogen: die Farbe laeuft im Kreis (nur Items, Bloecke und HUD, Minecraft animiert keine Entity-Texturen). */
+        public boolean rainbow = false;
+        /** Sekunden fuer eine volle Runde durch alle Farben. */
+        public float rainbowSeconds = 3.0f;
 
         public CategoryTint copy() {
             CategoryTint copy = new CategoryTint();
@@ -145,6 +170,8 @@ public final class ArneStylesConfig {
             copy.brightness = brightness;
             copy.mode = mode;
             copy.oreSpots = oreSpots;
+            copy.rainbow = rainbow;
+            copy.rainbowSeconds = rainbowSeconds;
             return copy;
         }
     }
@@ -188,6 +215,46 @@ public final class ArneStylesConfig {
     public boolean targetHud = false;
 
     /** PvP-Optik (Version 2.7). */
+    /** Sound-Mixer: Gruppe -> Lautstaerke (0 bis 2, fehlt = 100 %). */
+    public Map<String, Float> soundVolumes = new LinkedHashMap<>();
+    /** Fadenkreuz faerbt sich, wenn man auf ein Lebewesen in Reichweite zielt. */
+    public boolean crosshairTarget = false;
+    public int crosshairTargetRgb = 0xFF4D4D;
+    /** Treffer-Partikel: immer Krit- bzw. Schaerfe-Partikel, Menge 1 bis 5. */
+    public boolean hitCrits = false;
+    public boolean hitSharpness = false;
+    public float hitParticleAmount = 1.0f;
+    /** Wegpunkte im HUD anzeigen. */
+    public boolean waypointsHud = true;
+    public List<Waypoint> waypoints = new ArrayList<>();
+
+    /** Gemerkte Position. world: "sp:<Weltname>" oder "mp:<Server>", dimension z. B. minecraft:overworld. */
+    public static final class Waypoint {
+        public String world = "";
+        public String dimension = "";
+        public String name = "";
+        public int x;
+        public int y;
+        public int z;
+    }
+
+    /** Totem-Pop: Stil (0 normal, 1 ohne Drehung, 2 Mitte, 3 Mitte ohne Drehung), Tempo, Tonhoehe, Partikel-Farbe. */
+    public float totemPopStyle = 0.0f;
+    public float totemPopSpeed = 1.0f;
+    public float totemPopPitch = 1.0f;
+    public float totemParticleColor = 0.0f;
+    /** Spotify-Anzeige (ohne Login, aus dem Fenstertitel). Lyrics nur wenn eingeschaltet (fragt lrclib.net). */
+    /** CustomHud (mitgeliefert) wurde beim ersten Start eingerichtet (aus, Taste B frei). */
+    public boolean customHudSetupDone = false;
+    public boolean spotifyHud = false;
+    public float spotifyMode = 4.0f;
+    public boolean spotifyLyrics = false;
+    public float spotifyOffset = 0.0f;
+    public boolean spotifyHidePaused = false;
+    /** Cover anzeigen, Kartenbreite, auch andere Player (Browser, ...) statt nur Spotify. */
+    public boolean spotifyCover = true;
+    public float spotifyWidth = 210.0f;
+    public boolean spotifyAnyPlayer = false;
     public boolean hitColor = false;
     public int hitColorRgb = 0x8B5CF6;
     public float crystalSize = 1.0f;
@@ -249,11 +316,21 @@ public final class ArneStylesConfig {
     public boolean freelookThirdPerson = true;
     public boolean autoGg = false;
     public String autoGgMessage = "gg";
+    /** Chat: Uhrzeit vor jeder Nachricht. */
+    /** Eigene Trank-Effekt-Partikel in der Egoperspektive ausblenden (sonst bunte Flecken vor der Kamera). */
+    public boolean hideOwnEffectParticles = true;
+    public boolean chatTimestamps = true;
+    /** Chat: gleiche Nachrichten hintereinander zu einer Zeile mit (x2), (x3) ... zusammenfassen. */
+    public boolean chatStack = true;
+    /** Todespunkt: Position im Chat und Anzeige mit Entfernung und Richtung. */
+    public boolean deathPoint = true;
+    /** Auto-Preset: Server-Adresse (klein geschrieben) -> Preset, das beim Betreten geladen wird. */
+    public Map<String, String> serverPresets = new LinkedHashMap<>();
     /** Zuletzt mit der Taste geladenes Preset. */
     public String lastPreset = "";
 
     /** Design des Menues: "standard", ein anderes fertiges Design oder "custom:<datei>". */
-    public String guiTheme = "standard";
+    public String guiTheme = "arne";
 
     /** Groesse des Menues (1 = normal). */
     public float guiScale = 1.0f;
@@ -265,12 +342,139 @@ public final class ArneStylesConfig {
     public int guiButtons = 0;
     public int guiSwitches = 0;
     public int guiModsView = 0;
-    public int guiGlass = 0;
+    public int guiGlass = 2;
+    public int guiInspector = 0;
+    public int guiSize = 1;
+    /** true, sobald das neue Standard-Design (Arne Tweaks) einmal eingestellt wurde. */
+    public boolean guiDesignV2 = false;
+
+
+    // ---- 3.3: Spotify-Steuerung, Item-Zaehler, Tab-Ping, Fadenkreuz, Animationen, HUD-Stil ----
+    public boolean spotifyShadow = true;
+    public boolean itemCounter = false;
+    public boolean itemCounterVertical = false;
+    public boolean itemCounterHideZero = false;
+    public boolean countTotem = true;
+    public boolean countPearl = true;
+    public boolean countCrystal = true;
+    public boolean countObsidian = true;
+    public boolean countAnchor = false;
+    public boolean countGlowstone = false;
+    public boolean countGapple = true;
+    public boolean countXp = true;
+    public boolean countArrow = false;
+    public boolean countCobweb = false;
+    public boolean countWindCharge = false;
+    public boolean countSplash = false;
+    public boolean tabPing = false;
+    public boolean tabPingColors = true;
+    public boolean tabPingSuffix = true;
+    public boolean customCrosshair = false;
+    public boolean crosshairOutline = false;
+    public boolean animNoCooldown = false;
+    public boolean animEatBob = true;
+    public boolean hudTextShadow = true;
+    public boolean hudBorder = false;
+    public boolean keystrokesMouse = true;
+    public boolean keystrokesSpace = true;
+    public boolean coordsDirection = true;
+    public boolean chatSeconds = false;
+    public float spotifyBgOpacity = 0.85f;
+    public float itemCounterWarn = 2.0f;
+    public float tabPingGood = 80.0f;
+    public float tabPingBad = 200.0f;
+    public float crosshairOpacity = 1.0f;
+    public float crosshairScale = 1.0f;
+    public float animEquip = 1.0f;
+    public float animSwingSpeed = 1.0f;
+    public float animSwingMove = 1.0f;
+    public float animSwingRotation = 1.0f;
+    public float animEat = 1.0f;
+    public float handX = 0.0f;
+    public float handY = 0.0f;
+    public float handZ = 0.0f;
+    public float hudBgOpacity = 0.56f;
+    public float armorWarningPercent = 0.1f;
+    public float comboTimeout = 3.0f;
+    public float waypointCount = 3.0f;
+    public float deathPointMinutes = 15.0f;
+    public int spotifyAccentRgb = 0x1DB954;
+    public int itemCounterWarnRgb = 0xFF5555;
+    public int crosshairRgb = 0xFFFFFF;
+    public int crosshairOutlineRgb = 0x000000;
+    public int hudTextRgb = 0xFFFFFF;
+    public int hudBgRgb = 0x000000;
+    public int hudBorderRgb = 0x35D6E8;
+    public int hudAccentRgb = 0x2DD4BF;
+    public int chatTimeRgb = 0x555555;
+    /** Eigenes Fadenkreuz: 15 Zeilen mit je 15 Zeichen, # = Pixel an. */
+    public List<String> crosshairPixels = new ArrayList<>(com.arnestyles.client.mods.CustomCrosshair.preset("cross"));
+
+    // ---- Extra-Anzeigen (Uhr, Elytra, Server, Tage) ----
+    public boolean clockHud = false;
+    public boolean clockSeconds = false;
+    public boolean clock12h = false;
+    public boolean clockDate = true;
+    public boolean clockYear = true;
+    public boolean elytraHud = false;
+    public boolean elytraOnlyFlying = false;
+    public boolean elytraKmh = false;
+    public boolean serverHud = false;
+    public boolean dayHud = false;
+    public boolean dayTime = false;
+
+    // ---- Vanilla-HUD ----
+    public boolean scoreboardHide = false;
+    public boolean scoreboardHideNumbers = false;
+    public boolean scoreboardShadow = false;
+    public float scoreboardBgOpacity = 0.3f;
+    public boolean bossbarHide = false;
+    public boolean heldItemNameHide = false;
+    public boolean effectIconsHide = false;
+    public boolean hotbarSmooth = false;
+    public float hotbarOpacity = 1.0f;
+    public int hotbarSelectRgb = 0xFFFFFF;
+    public boolean cooldownIndicator = false;
+    public float cooldownStyle = 0.0f;
+    public int cooldownRgb = 0xFFFFFF;
+
+    // ---- Nametags ----
+    public boolean nametags = false;
+    public boolean nametagHealth = true;
+    public boolean nametagPing = true;
+    public boolean nametagShadow = false;
+    public float nametagScale = 1.0f;
+    public float nametagBgOpacity = 0.25f;
+
+    /** Einfuehrung beim ersten Start schon gezeigt (oder uebersprungen). */
+    public boolean introShown = false;
+    /** Menue-Taste wegen Iris schon einmal von K auf Rechts-Shift verlegt (nur einmal, danach entscheidet der Spieler). */
+    public boolean irisKeyMoved = false;
 
     /** Bringt geladene Werte in einen gueltigen Zustand und fuellt fehlende Eintraege auf. */
     public void sanitize() {
         if (guiTheme == null || guiTheme.isBlank()) {
-            guiTheme = "standard";
+            guiTheme = "arne";
+        }
+        if (!guiDesignV2) {
+            // Einmalig: wer noch das alte Standard-Design ohne Aenderungen hatte, bekommt das neue Standard-Design
+            boolean oldStandard = "standard".equals(guiTheme) && guiCorners == 0 && guiHeader == 0 && guiSidebar == 0
+                && guiActive == 0 && guiButtons == 0 && guiSwitches == 0 && guiModsView == 0 && guiGlass == 0;
+            boolean fresh = "arne".equals(guiTheme);
+            if (oldStandard || fresh) {
+                guiTheme = "arne";
+                guiCorners = 0;
+                guiHeader = 1;
+                guiSidebar = 0;
+                guiActive = 1;
+                guiButtons = 0;
+                guiSwitches = 0;
+                guiModsView = 3;
+                guiGlass = 2;
+                guiInspector = 0;
+                guiSize = 1;
+            }
+            guiDesignV2 = true;
         }
         if (!(guiScale >= 0.5f && guiScale <= 2.0f)) {
             guiScale = 1.0f;
@@ -287,6 +491,41 @@ public final class ArneStylesConfig {
         }
         if (colors == null) {
             colors = new LinkedHashMap<>();
+        }
+        if (waypoints == null) {
+            waypoints = new ArrayList<>();
+        }
+        waypoints.removeIf(w -> w == null || w.world == null || w.dimension == null || w.name == null);
+        com.arnestyles.client.mods.ModSetting.Slider.clampAll(this);
+        crosshairPixels = com.arnestyles.client.mods.CustomCrosshair.sanitize(crosshairPixels);
+        hitParticleAmount = clamp(hitParticleAmount, 1.0f, 5.0f, 1.0f);
+        totemPopStyle = clamp(totemPopStyle, 0.0f, 3.0f, 0.0f);
+        spotifyMode = clamp(spotifyMode, 0.0f, 4.0f, 4.0f);
+        spotifyOffset = clamp(spotifyOffset, -5.0f, 5.0f, 0.0f);
+        spotifyWidth = clamp(spotifyWidth, 150.0f, 320.0f, 210.0f);
+        totemPopSpeed = clamp(totemPopSpeed, 0.5f, 2.0f, 1.0f);
+        totemPopPitch = clamp(totemPopPitch, 0.5f, 2.0f, 1.0f);
+        totemParticleColor = clamp(totemParticleColor, 0.0f, 10.0f, 0.0f);
+        if (soundVolumes == null) {
+            soundVolumes = new LinkedHashMap<>();
+        }
+        soundVolumes.values().removeIf(v -> v == null || v.isNaN());
+        soundVolumes.replaceAll((k, v) -> Math.max(0.0f, Math.min(2.0f, v)));
+        if (serverPresets == null) {
+            serverPresets = new LinkedHashMap<>();
+        }
+        if (handTransforms == null) {
+            handTransforms = new LinkedHashMap<>();
+        }
+        handTransforms.values().removeIf(java.util.Objects::isNull);
+        for (HandTransform t : handTransforms.values()) {
+            t.x = clamp(t.x, -1.0f, 1.0f, 0.0f);
+            t.y = clamp(t.y, -1.0f, 1.0f, 0.0f);
+            t.z = clamp(t.z, -1.0f, 1.0f, 0.0f);
+            t.rotX = clamp(t.rotX, -180.0f, 180.0f, 0.0f);
+            t.rotY = clamp(t.rotY, -180.0f, 180.0f, 0.0f);
+            t.rotZ = clamp(t.rotZ, -180.0f, 180.0f, 0.0f);
+            t.scale = clamp(t.scale, 0.2f, 2.5f, 1.0f);
         }
 
         // Version 1: Low Fire war ein Style der Kategorie Fire. Version 2: eigener Schalter. Jetzt: ein Essential.
@@ -383,7 +622,7 @@ public final class ArneStylesConfig {
         if (Float.isNaN(lowFireOffset)) {
             lowFireOffset = 0.25f;
         }
-        lowFireOffset = Math.max(0.0f, Math.min(0.5f, lowFireOffset));
+        lowFireOffset = clamp(lowFireOffset, 0.0f, 0.5f, 0.25f);
         totemPopScale = clamp(totemPopScale, 0.0f, 1.0f, 1.0f);
         totemParticles = clamp(totemParticles, 0.0f, 1.0f, 1.0f);
         heldItemScale = clamp(heldItemScale, 0.3f, 1.5f, 1.0f);
@@ -420,6 +659,7 @@ public final class ArneStylesConfig {
             tint.hue = clamp(tint.hue, 0.0f, 1.0f, 0.58f);
             tint.saturation = clamp(tint.saturation, 0.0f, 1.0f, 0.6f);
             tint.brightness = clamp(tint.brightness, 0.0f, 1.0f, 0.5f);
+            tint.rainbowSeconds = clamp(tint.rainbowSeconds, 0.5f, 20.0f, 3.0f);
         }
         textureTints.values().removeIf(tint -> !tint.on);
         if (sidebarOrder == null) {

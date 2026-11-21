@@ -3,7 +3,7 @@
     "id": "arnestyles",
     "version": "${version}",
     "name": "ArneTweaks",
-    "description": "Clientseitige PvP-Mod: einzelne Texturen aus vielen Texture-Packs, Essentials und Extras wie Pop Chams, Shield Status, TotemCounter, Armor HUD, Effekt-Timer, AppleSkin, Motion Blur und No Chat Restrictions.",
+    "description": "Alles-in-einem Client-Mod: über 1000 Texture-Styles, HUD-Editor für jede Anzeige (auch das Minecraft-HUD), Spotify, Fadenkreuz-Editor, Nametags, Animationen und FPS-Einstellungen – fast alles anpassbar.",
     "authors": [
         "Arne"
     ],

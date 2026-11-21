@@ -33,8 +33,22 @@ def lib_path(lib):
     return MC / "libraries" / Path(*group.split(".")) / name / version / file
 
 
+def quiet_options(game_dir):
+    """Testlaeufe: Narrator aus (auch kein Barrierefreiheits-Startbildschirm) und Gesamtlautstaerke 35 %."""
+    game_dir.mkdir(parents=True, exist_ok=True)
+    options = game_dir / "options.txt"
+    lines = options.read_text(encoding="utf-8").splitlines() if options.exists() else []
+    wanted = {"narrator": "0", "onboardAccessibility": "false", "soundCategory_master": "0.35"}
+    lines = [l for l in lines if l.split(":", 1)[0] not in wanted]
+    lines += [f"{k}:{v}" for k, v in wanted.items()]
+    options.write_text("
+".join(lines) + "
+", encoding="utf-8")
+
+
 def main():
     java, game_dir = sys.argv[1], Path(sys.argv[2])
+    quiet_options(game_dir)
     child = json.loads((MC / "versions" / VERSION / f"{VERSION}.json").read_text(encoding="utf-8"))
     parent = json.loads((MC / "versions" / child["inheritsFrom"] / f"{child['inheritsFrom']}.json").read_text(encoding="utf-8"))
     classpath, seen = [], set()

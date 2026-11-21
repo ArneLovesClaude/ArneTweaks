@@ -40,7 +40,9 @@ public final class GuiTheme {
         OK(0xFF),
         WARN(0xFF),
         DANGER(0xFF),
-        OFF(0xFF);
+        OFF(0xFF),
+        /** Zweite Akzentfarbe (kreative Bereiche: Texturen, Zeichnen, Farben). Fehlt sie, gilt ACCENT. */
+        ACCENT2(0xFF);
 
         public final int alpha;
 
@@ -59,7 +61,8 @@ public final class GuiTheme {
      */
     public record Theme(String id, String name, boolean builtIn, int[] colors, String base) {
         public int rgb(Slot slot) {
-            return colors[slot.ordinal()] & 0xFFFFFF;
+            int i = slot.ordinal() < colors.length ? slot.ordinal() : Slot.ACCENT.ordinal();
+            return colors[i] & 0xFFFFFF;
         }
 
         public int argb(Slot slot) {
@@ -70,9 +73,11 @@ public final class GuiTheme {
     public static final String STANDARD = "standard";
     private static final String CUSTOM_PREFIX = "custom:";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    public static final String ARNE = "arne";
     private static final List<Theme> BUILT_IN = List.of(
-        //                                   backdrop  panel     edge      headTop   headBot   sidebar   field     card      cardHov   accent    text      muted     ok        warn      danger    off
-        builtIn(STANDARD, "Standard", 0x080A10, 0x121420, 0x2A2E45, 0x1D2036, 0x141727, 0x0E1019, 0x0B0D15, 0x1A1D2B, 0x242842, 0x8B5CF6, 0xEDEFF7, 0x8A90A8, 0x4ADE80, 0xFBBF24, 0xF87171, 0x3A3F58),
+        //                                   backdrop  panel     edge      headTop   headBot   sidebar   field     card      cardHov   accent    text      muted     ok        warn      danger    off       accent2
+        builtIn(ARNE, "Arne Tweaks", 0x080B12, 0x0D1320, 0x1E2A40, 0x0D1320, 0x0A0F1A, 0x0A0F19, 0x080B12, 0x111A29, 0x182235, 0x35D6E8, 0xF0F3FA, 0x929BAD, 0x4ADE80, 0xFBBF24, 0xF87171, 0x606B7D, 0xA66AFF),
+        builtIn(STANDARD, "Klassisch", 0x080A10, 0x121420, 0x2A2E45, 0x1D2036, 0x141727, 0x0E1019, 0x0B0D15, 0x1A1D2B, 0x242842, 0x8B5CF6, 0xEDEFF7, 0x8A90A8, 0x4ADE80, 0xFBBF24, 0xF87171, 0x3A3F58),
         builtIn("christmas", "Weihnachten", 0x05100A, 0x0F1F17, 0x2D5A3D, 0x9E1B1B, 0x5E1010, 0x0B1812, 0x08120D, 0x15291E, 0x1F3D2C, 0xF2C14E, 0xF5F7FA, 0x9DB5A6, 0x6EE7A0, 0xF2C14E, 0xFF5A5A, 0x34503F),
         builtIn("halloween", "Halloween", 0x0A0604, 0x140D08, 0x4A2A12, 0x3B1E4A, 0x1E0F26, 0x0E0906, 0x0A0604, 0x1F140C, 0x33200F, 0xFF7A1A, 0xFFEBD6, 0xA88B73, 0x9BE15D, 0xFFC23D, 0xFF4D4D, 0x4A3A2E),
         builtIn("easter", "Ostern", 0x403048, 0xFFF8EC, 0xE3C9E6, 0xFFC9DF, 0xD6F0E0, 0xF6EDF8, 0xFFFFFF, 0xF8EEF4, 0xEEDDF2, 0xB46CD9, 0x4A3A55, 0x8F7F99, 0x3FAE6E, 0xD9901E, 0xE0506A, 0xD5C8DC),
@@ -95,7 +100,25 @@ public final class GuiTheme {
     }
 
     private static Theme builtIn(String id, String name, int... colors) {
-        return new Theme(id, name, true, colors, id);
+        return new Theme(id, name, true, full(colors), id);
+    }
+
+    /** Fuellt fehlende Farben auf (aeltere Designs haben keine zweite Akzentfarbe: dann wie ACCENT). */
+    private static int[] full(int[] colors) {
+        int n = Slot.values().length;
+        if (colors.length >= n) {
+            return colors;
+        }
+        int[] out = java.util.Arrays.copyOf(colors, n);
+        for (int i = colors.length; i < n; i++) {
+            out[i] = colors[Slot.ACCENT.ordinal()];
+        }
+        return out;
+    }
+
+    /** Design per Id (fertig oder eigen), sonst das Standard-Design. */
+    public static Theme find(String id) {
+        return byId(id, BUILT_IN.get(0));
     }
 
     public static List<Theme> builtIns() {
@@ -144,7 +167,11 @@ public final class GuiTheme {
             }
             String base = json.has("base") ? json.get("base").getAsString() : STANDARD;
             Theme fallback = byId(base, BUILT_IN.get(0));
-            int[] colors = fallback.colors().clone();
+            int[] colors = full(fallback.colors().clone());
+            if (!colorJson(json).has(Slot.ACCENT2.key())) {
+                // Aelteres eigenes Design: zweiter Akzent wie der erste
+                colors[Slot.ACCENT2.ordinal()] = -1;
+            }
             JsonObject colorJson = json.has("colors") ? json.getAsJsonObject("colors") : new JsonObject();
             for (Slot slot : Slot.values()) {
                 if (colorJson.has(slot.key())) {
@@ -154,12 +181,19 @@ public final class GuiTheme {
                     }
                 }
             }
+            if (colors[Slot.ACCENT2.ordinal()] == -1) {
+                colors[Slot.ACCENT2.ordinal()] = colors[Slot.ACCENT.ordinal()];
+            }
             String name = json.has("name") ? json.get("name").getAsString() : fileName.substring(0, fileName.length() - 5);
             return new Theme(id, name, false, colors, base);
         } catch (Exception e) {
             ArneStyles.LOGGER.warn("Design {} ist kaputt: {}", fileName, e.getMessage());
             return null;
         }
+    }
+
+    private static JsonObject colorJson(JsonObject json) {
+        return json.has("colors") && json.get("colors").isJsonObject() ? json.getAsJsonObject("colors") : new JsonObject();
     }
 
     private static @Nullable Integer parseHex(String text) {
@@ -267,11 +301,54 @@ public final class GuiTheme {
     /** Das gewaehlte Design (Standard, wenn es nicht mehr existiert). */
     public static Theme active() {
         String id = ConfigManager.get().guiTheme;
+        String season = ConfigManager.get().seasonalThemes ? seasonTheme(java.time.LocalDate.now()) : null;
+        if (season != null) {
+            id = season;
+        }
         if (activeCache == null || !activeCacheId.equals(id)) {
             activeCache = byId(id == null ? STANDARD : id, BUILT_IN.get(0));
             activeCacheId = id == null ? STANDARD : id;
         }
         return activeCache;
+    }
+
+    /**
+     * Design zur Jahreszeit oder null: 1. bis 26. Dezember Weihnachten, Karfreitag bis eine Woche nach Ostern Ostern,
+     * 15. Oktober bis 1. November Halloween.
+     */
+    public static String seasonTheme(java.time.LocalDate date) {
+        int month = date.getMonthValue();
+        int day = date.getDayOfMonth();
+        if (month == 12 && day <= 26) {
+            return "christmas";
+        }
+        if ((month == 10 && day >= 15) || (month == 11 && day == 1)) {
+            return "halloween";
+        }
+        java.time.LocalDate easter = easterSunday(date.getYear());
+        if (!date.isBefore(easter.minusDays(2)) && !date.isAfter(easter.plusDays(7))) {
+            return "easter";
+        }
+        return null;
+    }
+
+    /** Ostersonntag (gregorianisch, Algorithmus nach Gauss / Meeus). */
+    static java.time.LocalDate easterSunday(int year) {
+        int a = year % 19;
+        int b = year / 100;
+        int c = year % 100;
+        int d = b / 4;
+        int e = b % 4;
+        int f = (b + 8) / 25;
+        int g = (b - f + 1) / 3;
+        int h = (19 * a + b - d - g + 15) % 30;
+        int i = c / 4;
+        int k = c % 4;
+        int l = (32 + 2 * e + 2 * i - h - k) % 7;
+        int m = (a + 11 * h + 22 * l) / 451;
+        int month = (h + l - 7 * m + 114) / 31;
+        int day = (h + l - 7 * m + 114) % 31 + 1;
+        return java.time.LocalDate.of(year, month, day);
     }
 
     /** Fertiges Design, aus dem theme entstanden ist. */

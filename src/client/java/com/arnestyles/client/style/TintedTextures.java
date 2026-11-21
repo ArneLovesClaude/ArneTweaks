@@ -52,6 +52,11 @@ public final class TintedTextures {
     /** Basis fuer Stone und Deepslate, wenn kein eigener Style gewaehlt ist. */
     private static final String STONE_BASE = "bauloo_privat";
     public static final String DEFAULT_KEY = "default";
+    private static final List<String> VANILLA_CROSSHAIR = List.of("crosshair", "crosshair_attack_indicator_full",
+        "crosshair_attack_indicator_background", "crosshair_attack_indicator_progress");
+    private static final List<String> VANILLA_HUD = List.of("heart/full", "heart/half", "heart/container", "heart/hardcore_full",
+        "heart/absorbing_full", "food_full", "food_half", "food_empty", "armor_full", "armor_half", "armor_empty", "air", "air_bursting",
+        "hotbar_selection", "hotbar_offhand_left", "hotbar_offhand_right", "experience_bar_progress", "experience_bar_background");
     public static final int MODE_REPLACE = 0;
     public static final int MODE_SHIFT = 1;
 
@@ -84,7 +89,7 @@ public final class TintedTextures {
     /** Im Customize-Tab bearbeitbar: alle Kategorien mit Texturen (nicht Himmel, Sounds, Inventar, HUD, Fadenkreuz, Essentials). */
     public static boolean customizable(StyleCategory category) {
         return switch (category) {
-            case SKY, SOUNDS, INVENTORY, HUD, CROSSHAIR, ESSENTIALS -> false;
+            case SKY, SOUNDS, INVENTORY, ESSENTIALS -> false;
             default -> true;
         };
     }
@@ -332,6 +337,13 @@ public final class TintedTextures {
             case SNOW -> VANILLA_SNOW;
             default -> List.of();
         };
+        if (category == StyleCategory.CROSSHAIR || category == StyleCategory.HUD) {
+            // HUD-Teile liegen nicht unter block/, sondern unter gui/sprites/hud/
+            for (String name : category == StyleCategory.CROSSHAIR ? VANILLA_CROSSHAIR : VANILLA_HUD) {
+                result.add("textures/gui/sprites/hud/" + name + ".png");
+            }
+            return result;
+        }
         for (String name : names) {
             result.add("textures/block/" + name + ".png");
         }
@@ -402,7 +414,75 @@ public final class TintedTextures {
         if (tint != null) {
             out.append(Math.round(tint.hue * 1000)).append(':').append(Math.round(tint.saturation * 1000)).append(':')
                 .append(Math.round(tint.brightness * 1000)).append(':').append(tint.mode).append(tint.oreSpots ? 's' : 'w');
+            if (tint.rainbow) {
+                out.append(":r").append(Math.round(tint.rainbowSeconds * 10));
+            }
         }
+    }
+
+    // ---- Regenbogen ----
+
+    /** Bilder pro Farbrunde. Minecraft blendet weich zwischen ihnen (interpolate). */
+    public static final int RAINBOW_FRAMES = 12;
+
+    /** Kann Minecraft diese Textur animieren? Nur Texturen in Atlanten (Items, Bloecke, HUD), keine Entity-Texturen. */
+    public static boolean animatable(String asset) {
+        return asset.startsWith("textures/item/") || asset.startsWith("textures/block/") || asset.startsWith("textures/gui/sprites/");
+    }
+
+    /** Regenbogen fuer diese Textur aktiv (und moeglich)? */
+    public static boolean rainbowFor(StyleCategory category, String styleKey, String asset, NativeImage image) {
+        CategoryTint tint = effective(category, styleKey, asset);
+        return tint != null && tint.rainbow && animatable(asset) && image.getWidth() == image.getHeight();
+    }
+
+    public static int rainbowFrameTime(StyleCategory category, String styleKey, String asset) {
+        CategoryTint tint = effective(category, styleKey, asset);
+        float seconds = tint == null ? 3.0f : tint.rainbowSeconds;
+        return Math.max(1, Math.round(seconds * 20.0f / RAINBOW_FRAMES));
+    }
+
+    /** Bildfolge (untereinander): jedes Bild ist im Farbton ein Stueck weiter gedreht. */
+    public static NativeImage rainbowStrip(NativeImage src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        NativeImage out = new NativeImage(w, h * RAINBOW_FRAMES, true);
+        float[] hsv = new float[3];
+        for (int f = 0; f < RAINBOW_FRAMES; f++) {
+            float shift = f / (float) RAINBOW_FRAMES;
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int argb = src.getColorArgb(x, y);
+                    int alpha = argb >>> 24;
+                    if (alpha == 0) {
+                        out.setColorArgb(x, f * h + y, 0);
+                        continue;
+                    }
+                    rgbToHsv(argb, hsv);
+                    int rgb = net.minecraft.util.math.MathHelper.hsvToRgb((hsv[0] + shift) % 1.0f, hsv[1], hsv[2]);
+                    out.setColorArgb(x, f * h + y, (alpha << 24) | (rgb & 0xFFFFFF));
+                }
+            }
+        }
+        return out;
+    }
+
+    /** .mcmeta neben target um die Regenbogen-Animation ergaenzen (vorhandene Angaben wie GUI-Skalierung bleiben). */
+    private static void writeRainbowMeta(Path target, int frameTime) throws IOException {
+        Path meta = target.resolveSibling(target.getFileName() + ".mcmeta");
+        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+        if (Files.isRegularFile(meta)) {
+            try {
+                json = com.google.gson.JsonParser.parseString(Files.readString(meta)).getAsJsonObject();
+            } catch (RuntimeException e) {
+                json = new com.google.gson.JsonObject();
+            }
+        }
+        com.google.gson.JsonObject animation = new com.google.gson.JsonObject();
+        animation.addProperty("frametime", frameTime);
+        animation.addProperty("interpolate", true);
+        json.add("animation", animation);
+        Files.writeString(meta, json.toString());
     }
 
     private static @Nullable CategoryTint oreBackgroundTint(String asset) {
@@ -617,7 +697,7 @@ public final class TintedTextures {
 
     // ---- Pack beim Laden der Ressourcen ----
 
-    private static Path generatedRoot() {
+    public static Path generatedRoot() {
         return FabricLoader.getInstance().getConfigDir().resolve("arnestyles").resolve(".generated-tints");
     }
 
@@ -662,8 +742,15 @@ public final class TintedTextures {
                     }
                     Path target = root.resolve("assets").resolve("minecraft").resolve(asset);
                     Files.createDirectories(target.getParent());
-                    image.writeTo(target);
                     copyMeta(source, asset, target);
+                    if (rainbowFor(category, styleKey, asset, image)) {
+                        try (NativeImage strip = rainbowStrip(image)) {
+                            strip.writeTo(target);
+                        }
+                        writeRainbowMeta(target, rainbowFrameTime(category, styleKey, asset));
+                    } else {
+                        image.writeTo(target);
+                    }
                     any = true;
                 } catch (IOException | RuntimeException e) {
                     ArneStyles.LOGGER.warn("Textur {} konnte nicht eingefaerbt werden.", asset, e);

@@ -64,6 +64,8 @@ public class StylesScreen extends Screen {
     private static int C_CARD = 0xFF1A1D2B;
     private static int C_CARD_HOVER = 0xFF242842;
     private static int C_ACCENT = 0xFF8B5CF6;
+    /** Zweiter Akzent (Violett im Arne-Tweaks-Design): Texturen, Auswahl, kreative Bereiche. */
+    private static int C_ACCENT2 = 0xFFA66AFF;
     private static int C_ACCENT_SOFT = 0x408B5CF6;
     private static int C_TEXT = 0xFFEDEFF7;
     private static int C_MUTED = 0xFF8A90A8;
@@ -172,6 +174,11 @@ public class StylesScreen extends Screen {
     private boolean resetArmed;
     /** true, wenn sich Texturen geaendert haben und beim Schliessen neu geladen werden muss. */
     private boolean dirty;
+    /** Ein Unterfenster (Zeichen-Editor) ist offen: beim Wechsel dorthin nicht neu laden. */
+    private boolean childOpen;
+    /** Hinweis, warum sich eine Textur nicht zeichnen laesst (nur kurz im Info-Text). */
+    private @Nullable Text drawError;
+    private long drawErrorAt;
     private int cloudGeneration = CloudStyles.generation();
     /** Erklaerung der Farb-Zeile unter der Maus (wird oben in der Info-Zeile gezeigt). */
     private @Nullable Text tintHover;
@@ -189,6 +196,23 @@ public class StylesScreen extends Screen {
     private int cardsBottom;
     private int columns;
     private int cardRows;
+    /** Kartenbreite (fuellt die Zeile). */
+    private int cardW = CARD_W;
+    /** Linke Kante der Inspector-Spalte (= right, wenn sie aus ist). */
+    private int inspectorX;
+    /** Reiter im Inspector: Live-Vorschau oder Vorlagen. */
+    private boolean inspectorThemes;
+    /** Was der Inspector zeigt: Karte unter der Maus bzw. zuletzt gezeigter Mod. */
+    private @Nullable StyleDefinition hoveredStyle;
+    private ModSetting.@Nullable Toggle inspectToggle;
+    private @Nullable SettingSlider inspectSlider;
+    /** Aenderungen seit dem letzten Uebernehmen (fuer den Apply-Knopf). */
+    private int pendingChanges;
+    /** Herkunft eigener Styles (aus style.json), damit nicht jedes Bild neu gelesen wird. */
+    private final Map<String, String> originCache = new HashMap<>();
+    private static final net.minecraft.item.ItemStack TOTEM_STACK = new net.minecraft.item.ItemStack(net.minecraft.item.Items.TOTEM_OF_UNDYING);
+    private static final net.minecraft.util.math.random.Random PREVIEW_RANDOM = net.minecraft.util.math.random.Random.create();
+    private static @Nullable String versionText;
 
     public StylesScreen() {
         this(null);
@@ -233,8 +257,8 @@ public class StylesScreen extends Screen {
     private void computeLayout() {
         updateScale();
         LIST_WIDTH = iconSidebar ? LIST_WIDTH_ICONS : LIST_WIDTH_FULL;
-        int panelW = Math.min(vw - 16, 600);
-        int panelH = Math.min(vh - 16, 362);
+        int panelW = Math.min(vw - 16, bigLayout ? 1000 : 600);
+        int panelH = Math.min(vh - 16, bigLayout ? 560 : 362);
         this.left = (vw - panelW) / 2;
         this.top = (vh - panelH) / 2;
         this.right = left + panelW;
@@ -242,13 +266,17 @@ public class StylesScreen extends Screen {
         this.listTop = top + HEADER_H + (iconSidebar ? 6 : 26);
         this.rowsVisible = Math.max(1, (bottom - FOOTER_H - 4 - listTop) / ROW_HEIGHT);
         this.paneX = left + LIST_WIDTH + 12;
-        this.paneRight = right - 10;
+        int inspectorW = !inspectorOn ? 0 : panelW >= 760 ? 172 : panelW >= 520 ? 132 : 0;
+        this.inspectorX = right - inspectorW;
+        this.paneRight = right - 10 - inspectorW;
         boolean stylePage = !presetsOpen && !modsOpen && !shadersOpen && !themesOpen && !importOpen;
         int extraRows = !stylePage || KEY_CUSTOMIZE_TAB.equals(ConfigManager.get().activeTab) ? 0 : current == StyleCategory.SOUNDS ? 22 : current == StyleCategory.ORES ? 66
             : TintedTextures.supports(current) ? 44 : 0;
         this.cardsTop = top + HEADER_H + 44 + extraRows;
         this.cardsBottom = bottom - FOOTER_H - 4;
         this.columns = Math.max(1, (paneRight - paneX + CARD_GAP) / (CARD_W + CARD_GAP));
+        // Karten so breit machen, dass sie die Zeile fuellen (hoechstens etwas breiter als normal)
+        this.cardW = Math.min(CARD_W + 24, Math.max(CARD_W, (paneRight - paneX + CARD_GAP) / columns - CARD_GAP));
         this.cardRows = Math.max(1, (cardsBottom - cardsTop + CARD_GAP) / (CARD_H + CARD_GAP));
     }
 
@@ -496,14 +524,22 @@ public class StylesScreen extends Screen {
             boolean showName = !compact || selected;
             int w = showName ? 24 + this.textRenderer.getWidth(tabName(tab)) : 20;
             boolean hovered = inside(mouseX, mouseY, x, y1, x + w, y2);
-            if (selected) {
+            if (bigLayout) {
+                // Dashboard: keine Kaesten, nur eine Linie unter dem aktiven Reiter
+                if (hovered && !selected) {
+                    round(context, x, y1, x + w, y2, C_CARD_HOVER);
+                }
+                if (selected) {
+                    context.fill(x + 2, y2 - 1, x + w - 2, y2 + 1, C_ACCENT);
+                }
+            } else if (selected) {
                 roundBordered(context, x, y1, x + w, y2, C_ACCENT, C_ACCENT_SOFT);
             } else {
                 roundBordered(context, x, y1, x + w, y2, hovered ? C_ACCENT : C_EDGE, hovered ? C_CARD_HOVER : C_CARD);
             }
             drawIconAsset(context, tabIcon(tab), x + 2, y1 + 1);
             if (showName) {
-                text(context, tabName(tab), x + 20, y1 + 5, selected ? C_TEXT : C_MUTED);
+                text(context, tabName(tab), x + 20, y1 + 5, selected ? C_TEXT : hovered ? C_TEXT_SOFT : C_MUTED);
             }
             final String key = tab;
             hits.add(new Hit(x, y1, x + w, y2, () -> openTab(key)));
@@ -630,14 +666,14 @@ public class StylesScreen extends Screen {
         ArneStylesConfig config = ConfigManager.get();
         config.modEnabled = !config.modEnabled;
         ConfigManager.save();
-        dirty = true;
+        markDirty();
     }
 
     private void toggleCurrent() {
         ArneStylesConfig config = ConfigManager.get();
         config.setEnabled(current, !config.isEnabled(current));
         ConfigManager.save();
-        dirty = true;
+        markDirty();
     }
 
     private void chooseStyle(StyleDefinition style) {
@@ -653,7 +689,7 @@ public class StylesScreen extends Screen {
             config.setEnabled(current, true);
         }
         ConfigManager.save();
-        dirty = true;
+        markDirty();
     }
 
     private void moveStyle(int delta) {
@@ -680,10 +716,10 @@ public class StylesScreen extends Screen {
         if (on && !config.isEnabled(StyleCategory.ESSENTIALS)) {
             config.setEnabled(StyleCategory.ESSENTIALS, true);
             // Andere Essentials mit eigenen Dateien werden dadurch ebenfalls aktiv.
-            dirty = true;
+            markDirty();
         }
         if (needsReload) {
-            dirty = true;
+            markDirty();
         }
         ConfigManager.save();
     }
@@ -695,6 +731,41 @@ public class StylesScreen extends Screen {
         ConfigManager.save();
     }
 
+    /** Unterfenster oeffnen, ohne dass dieses Menue dabei neu laedt. */
+    void openChild(net.minecraft.client.gui.screen.Screen child) {
+        if (this.client == null) {
+            return;
+        }
+        childOpen = true;
+        this.client.setScreen(child);
+        childOpen = false;
+    }
+
+    /** Nach dem Speichern einer Zeichnung: neuen Style einlesen, waehlen und im Customize-Tab zeigen. */
+    void drawingSaved(StyleCategory category, String id, String asset) {
+        reloadStyles();
+        current = category;
+        List<StyleDefinition> styles = StyleRegistry.getStyles(category);
+        for (int i = 0; i < styles.size(); i++) {
+            if (styles.get(i).id().equals(id)) {
+                chooseStyle(styles.get(i));
+                customizeCategory = category;
+                customizeStyle = i;
+                customizeAsset = asset;
+                break;
+            }
+        }
+        markDirty();
+    }
+
+    private void openDrawEditor(StyleDefinition style, String asset) {
+        Text error = DrawScreen.open(this, current, style, asset);
+        if (error != null) {
+            drawError = error;
+            drawErrorAt = System.currentTimeMillis();
+        }
+    }
+
     private void reloadStyles() {
         CloudStyles.retry(current);
         StyleRegistry.reload();
@@ -703,8 +774,9 @@ public class StylesScreen extends Screen {
         uniquePreviewCache.clear();
         soundCountCache.clear();
         styleHasFileCache.clear();
+        modelFaceCache.clear();
         cardScroll = 0;
-        dirty = true;
+        markDirty();
     }
 
     private void openFolder() {
@@ -744,6 +816,32 @@ public class StylesScreen extends Screen {
     @Override
     public boolean keyPressed(KeyInput input) {
         int key = input.key();
+        if (hexEditKey != null) {
+            if (key == GLFW.GLFW_KEY_BACKSPACE) {
+                if (hexBuffer.length() > 0) {
+                    hexBuffer.setLength(hexBuffer.length() - 1);
+                }
+            } else if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
+                applyHex();
+            } else if (key == GLFW.GLFW_KEY_ESCAPE) {
+                hexEditKey = null;
+                hexBuffer.setLength(0);
+            }
+            return true;
+        }
+        if (modsOpen && key == GLFW.GLFW_KEY_ESCAPE && modSearching()) {
+            modSearch.setLength(0);
+            modFilter = 0;
+            cardScroll = 0;
+            return true;
+        }
+        if (modsOpen && key == GLFW.GLFW_KEY_BACKSPACE) {
+            if (modSearch.length() > 0) {
+                modSearch.setLength(modSearch.offsetByCodePoints(modSearch.length(), -1));
+                cardScroll = 0;
+            }
+            return true;
+        }
 
         if (key == GLFW.GLFW_KEY_DELETE) {
             if (resetArmed) {
@@ -753,7 +851,7 @@ public class StylesScreen extends Screen {
                 cardScroll = 0;
                 current = parseCategory(ConfigManager.get().activeCategory);
                 resetArmed = false;
-                dirty = true;
+                markDirty();
             } else {
                 resetArmed = true;
             }
@@ -851,6 +949,19 @@ public class StylesScreen extends Screen {
             }
             return true;
         }
+        if (hexEditKey != null) {
+            if (hexBuffer.length() < 6 && Character.digit(codepoint, 16) >= 0) {
+                hexBuffer.appendCodePoint(Character.toUpperCase(codepoint));
+            }
+            return true;
+        }
+        if (modsOpen) {
+            if (modSearch.length() < 24) {
+                modSearch.appendCodePoint(codepoint);
+                cardScroll = 0;
+            }
+            return true;
+        }
         if (search.codePointCount(0, search.length()) < MAX_SEARCH_LENGTH) {
             search.appendCodePoint(codepoint);
             onSearchChanged();
@@ -925,7 +1036,7 @@ public class StylesScreen extends Screen {
         float fraction = (float) ((mouseX - hit.barX1()) / Math.max(1, hit.barX2() - hit.barX1()));
         hit.slider().setFraction(fraction);
         if (hit.slider() instanceof TintSlider tintSlider && TintedTextures.get(tintSlider.category()).on) {
-            dirty = true;
+            markDirty();
         }
     }
 
@@ -980,6 +1091,11 @@ public class StylesScreen extends Screen {
 
     @Override
     public void removed() {
+        if (childOpen) {
+            // Nur kurz im Zeichen-Editor: neu geladen wird erst, wenn das Menue wirklich zugeht
+            super.removed();
+            return;
+        }
         PreviewTextures.clear();
         PerformanceSettings.flush();
         if (dirty && this.client != null) {
@@ -1147,7 +1263,7 @@ public class StylesScreen extends Screen {
             soundCountCache.clear();
             styleHasFileCache.clear();
             if (CloudStyles.consumeActiveChanged()) {
-                dirty = true;
+                markDirty();
             }
         }
         applyTheme();
@@ -1163,6 +1279,7 @@ public class StylesScreen extends Screen {
     /** Das ganze Menue in eigener Groesse: alle Koordinaten sind durch {@link #scale} geteilt. */
     private void renderScaled(DrawContext context, int mouseX, int mouseY) {
         hits.clear();
+        hoveredStyle = null;
         wheelApply = null;
         if (PackImporter.pollFinished()) {
             // Neue Styles: Vorschauen neu laden, beim Schliessen Texturen neu laden
@@ -1171,7 +1288,7 @@ public class StylesScreen extends Screen {
             uniquePreviewCache.clear();
             soundCountCache.clear();
             styleHasFileCache.clear();
-            dirty = true;
+            markDirty();
         }
         sliderHits.clear();
         shownTintHover = tintHover;
@@ -1218,7 +1335,10 @@ public class StylesScreen extends Screen {
         }
         drawCategoryList(context, mouseX, mouseY);
         drawDetails(context, mouseX, mouseY);
-        drawFooter(context);
+        if (inspectorX < right) {
+            drawInspector(context, mouseX, mouseY);
+        }
+        drawFooter(context, mouseX, mouseY);
         if (sideTip != null) {
             // Seitenleiste nur mit Symbolen: Name des Eintrags unter der Maus
             int tw = this.textRenderer.getWidth(sideTip) + 8;
@@ -1544,14 +1664,14 @@ public class StylesScreen extends Screen {
         int last = Math.min(styles.size(), first + cardRows * columns);
         for (int i = first; i < last; i++) {
             int slot = i - first;
-            int cx = paneX + (slot % columns) * (CARD_W + CARD_GAP);
+            int cx = paneX + (slot % columns) * (cardW + CARD_GAP);
             int cy = cardsTop + (slot / columns) * (CARD_H + CARD_GAP);
             StyleDefinition style = styles.get(i);
             drawCard(context, style, cx, cy, style.id().equals(selected.id()), enabled && config.modEnabled, mouseX, mouseY);
         }
 
         if (styles.size() == 1 && columns > 1) {
-            int textX = paneX + CARD_W + CARD_GAP + 6;
+            int textX = paneX + cardW + CARD_GAP + 6;
             int textY = cardsTop + 6;
             for (OrderedText line : this.textRenderer.wrapLines(Text.translatable("arnestyles.gui.empty", current.folderName()), paneRight - textX)) {
                 text(context, line, textX, textY, C_MUTED);
@@ -1578,25 +1698,37 @@ public class StylesScreen extends Screen {
     }
 
     private void drawCard(DrawContext context, StyleDefinition style, int x, int y, boolean selected, boolean active, int mouseX, int mouseY) {
-        boolean hovered = inside(mouseX, mouseY, x, y, x + CARD_W, y + CARD_H);
-        int border = selected ? C_ACCENT : (hovered ? C_EDGE_HOVER : C_EDGE);
-        roundBordered(context, x, y, x + CARD_W, y + CARD_H, border, hovered ? C_CARD_HOVER : C_CARD);
+        boolean hovered = inside(mouseX, mouseY, x, y, x + cardW, y + CARD_H);
+        if (hovered) {
+            hoveredStyle = style;
+        }
+        int border = selected ? C_ACCENT2 : (hovered ? C_EDGE_HOVER : C_EDGE);
+        int fill = selected ? GuiTheme.mix(hovered ? C_CARD_HOVER : C_CARD, C_ACCENT2, 0.10f) : hovered ? C_CARD_HOVER : C_CARD;
+        roundBordered(context, x, y, x + cardW, y + CARD_H, border, fill);
         if (selected) {
-            round(context, x + 1, y + 1, x + CARD_W - 1, y + 3, C_ACCENT);
+            round(context, x + 1, y + 1, x + cardW - 1, y + 3, C_ACCENT2);
         }
 
-        int px = x + (CARD_W - PREVIEW) / 2;
+        int px = x + (cardW - PREVIEW) / 2;
         int py = y + 5;
         round(context, px, py, px + PREVIEW, py + PREVIEW, C_FIELD);
         drawPreview(context, style, px, py, PREVIEW);
 
-        String name = this.textRenderer.trimToWidth(style.name().getString(), CARD_W - 8);
-        text(context, name, x + 4, py + PREVIEW + 4, C_TEXT);
-        if (selected) {
-            Text status = Text.translatable(active ? "arnestyles.gui.status_selected" : "arnestyles.gui.inactive");
-            text(context, status, x + 4, py + PREVIEW + 14, active ? C_OK : C_WARN);
+        String name = this.textRenderer.trimToWidth(style.name().getString(), cardW - 8);
+        text(context, name, x + 4, py + PREVIEW + 4, hovered || selected ? C_TEXT : C_TEXT_SOFT);
+        if (selected && !active) {
+            text(context, Text.translatable("arnestyles.gui.inactive"), x + 4, py + PREVIEW + 14, C_WARN);
+        } else {
+            String origin = originOf(style);
+            text(context, Text.translatable("arnestyles.origin." + origin), x + 4, py + PREVIEW + 14, originColor(origin));
         }
-        hits.add(new Hit(x, y, x + CARD_W, y + CARD_H, () -> chooseStyle(style)));
+        if (selected && active) {
+            // Gruener Haken oben rechts in der Vorschau
+            int cx2 = px + PREVIEW - 1;
+            round(context, cx2 - 11, py + 1, cx2, py + 12, C_OK);
+            text(context, "\u2714", cx2 - 9, py + 3, 0xFF0B1A10);
+        }
+        hits.add(new Hit(x, y, x + cardW, y + CARD_H, () -> chooseStyle(style)));
     }
 
     // ---- Performance-Reiter: FPS-Einstellungen ----
@@ -1715,7 +1847,7 @@ public class StylesScreen extends Screen {
         hits.add(new Hit(paneX, y, paneX + half, y2, () -> {
             tint.on = !tint.on;
             ConfigManager.save();
-            dirty = true;
+            markDirty();
         }));
         if (over) {
             tintHover = Text.translatable(current == StyleCategory.STONE || current == StyleCategory.DEEPSLATE
@@ -1749,7 +1881,7 @@ public class StylesScreen extends Screen {
         hits.add(new Hit(x, y, x + w, y2, () -> {
             toggle.run();
             ConfigManager.save();
-            dirty = true;
+            markDirty();
         }));
         if (over) {
             tintHover = Text.translatable(descKey);
@@ -1940,7 +2072,7 @@ public class StylesScreen extends Screen {
                 // Einfach: die ganze Textur bekommt die Farbe, auch Zustaende mit eigener Farbe
                 TintedTextures.clearStateTints(current, styleKey, asset);
             }
-            dirty = true;
+            markDirty();
         };
         drawWheel(context, tint);
 
@@ -1961,8 +2093,21 @@ public class StylesScreen extends Screen {
                 tint.on = true;
             });
 
+        // Regenbogen: nur fuer Texturen, die Minecraft animieren kann (Items, Bloecke, HUD)
+        boolean canRainbow = TintedTextures.animatable(asset);
+        if (canRainbow) {
+            drawTintSwitch(context, sx, y0 + 2 * rowStep, sw, Text.translatable("arnestyles.customize.rainbow"), tint.rainbow,
+                "arnestyles.customize.rainbow.desc", mouseX, mouseY, () -> {
+                    tint.rainbow = !tint.rainbow;
+                    tint.on = true;
+                    if (!advanced) {
+                        TintedTextures.clearStateTints(current, styleKey, asset);
+                    }
+                });
+        }
+
         // Darunter: Helligkeit, dann (bei Erzen) Nur-Flecken und die Knoepfe
-        int ry = y0 + Math.max(wheelSize, 2 * rowStep) + 4;
+        int ry = y0 + Math.max(wheelSize, (canRainbow ? 3 : 2) * rowStep) + 4;
         drawTintSlider(context, new TintSlider(current, TintSlider.Part.BRIGHTNESS, key), ex, ry, ew, tint.on, mouseX, mouseY);
         ry += rowStep;
         int bx = drawPillRight(context, paneRight, ry + 2, Text.translatable("arnestyles.customize.all"), C_TEXT, mouseX, mouseY, () -> {
@@ -1977,7 +2122,7 @@ public class StylesScreen extends Screen {
                 }
             }
             ConfigManager.save();
-            dirty = true;
+            markDirty();
         });
         bx = drawPillRight(context, bx - 4, ry + 2, Text.translatable("arnestyles.customize.reset"), C_MUTED, mouseX, mouseY, () -> {
             if (advanced) {
@@ -1986,8 +2131,17 @@ public class StylesScreen extends Screen {
                 TintedTextures.clearTextureTint(current, styleKey, asset);
             }
             ConfigManager.save();
-            dirty = true;
+            markDirty();
         });
+        // Zeichnen: neben den Knoepfen, wenn Platz ist, sonst in einer eigenen Zeile darunter
+        Text drawLabel = Text.translatable("arnestyles.draw.open");
+        int drawRowExtra = 0;
+        if (bx - 4 - (this.textRenderer.getWidth(drawLabel) + 12) >= ex) {
+            bx = drawPillRight(context, bx - 4, ry + 2, drawLabel, C_ACCENT, mouseX, mouseY, () -> openDrawEditor(style, asset));
+        } else {
+            drawPillRight(context, paneRight, ry + rowStep + 2, drawLabel, C_ACCENT, mouseX, mouseY, () -> openDrawEditor(style, asset));
+            drawRowExtra = rowStep;
+        }
         if (current == StyleCategory.ORES && asset.contains("_ore") && bx - 4 - ex >= 60) {
             drawTintSwitch(context, ex, ry, bx - 4 - ex, Text.translatable("arnestyles.tint.ore_spots"), tint.oreSpots, "arnestyles.tint.ore_spots.desc",
                 mouseX, mouseY, () -> tint.oreSpots = !tint.oreSpots);
@@ -1995,7 +2149,7 @@ public class StylesScreen extends Screen {
 
         // Vorschau: links das Pack wie auf den Karten, rechts die gewaehlte Textur gross (beides mit der Farbe)
         // Platz rechts unter den Knoepfen oder links unter den Kacheln, je nachdem wo mehr frei ist
-        int rightY = ry + rowStep + 4;
+        int rightY = ry + rowStep + 4 + drawRowExtra;
         int rightSize = Math.min(bottomY - rightY, Math.min((ew - 6) / 2, 80));
         int usedRows = Math.max(1, Math.min(customizeVisibleRows, customizeTotalRows - cardScroll));
         int leftY = y0 + usedRows * step + 4;
@@ -2020,9 +2174,14 @@ public class StylesScreen extends Screen {
             } else if (inside(mouseX, mouseY, tx, py, tx + size, py + size)) {
                 hovered = Text.translatable("arnestyles.customize.preview_texture");
             }
+            hits.add(new Hit(tx, py, tx + size, py + size, () -> openDrawEditor(style, asset)));
         }
 
-        Text info = hovered != null ? hovered : Text.translatable("arnestyles.customize.info", asset.substring(asset.lastIndexOf('/') + 1));
+        if (drawError != null && System.currentTimeMillis() - drawErrorAt > 4000) {
+            drawError = null;
+        }
+        Text info = drawError != null ? drawError : hovered != null ? hovered
+            : Text.translatable("arnestyles.customize.info", asset.substring(asset.lastIndexOf('/') + 1));
         text(context, this.textRenderer.trimToWidth(info.getString(), infoW), paneX, infoY, C_MUTED);
     }
 
@@ -2176,6 +2335,66 @@ public class StylesScreen extends Screen {
     }
 
     /** HUD-Editor oeffnen. Geht nur in einer Welt, weil das HUD sonst nicht gezeichnet wird. */
+    private volatile boolean exporting;
+
+    /** Aktuelles Setup als Texture-Pack (.zip) in den resourcepacks-Ordner legen und den Ordner oeffnen. */
+    private void exportPack() {
+        if (exporting || this.client == null) {
+            return;
+        }
+        exporting = true;
+        java.nio.file.Path dir = this.client.getResourcePackDir();
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                java.nio.file.Path out = com.arnestyles.client.style.PackExporter.export(dir);
+                presetMessage = Text.translatable("arnestyles.export.done", out.getFileName().toString()).getString();
+                presetMessageColor = C_OK;
+                Util.getOperatingSystem().open(dir);
+            } catch (java.io.IOException | RuntimeException e) {
+                presetMessage = Text.translatable("arnestyles.export.failed", String.valueOf(e.getMessage())).getString();
+                presetMessageColor = C_DANGER;
+            } finally {
+                exporting = false;
+            }
+        });
+    }
+
+    private void openHandEditor() {
+        if (this.client == null) {
+            return;
+        }
+        if (this.client.world == null) {
+            hudEditorHint = true;
+            return;
+        }
+        openChild(new HandEditorScreen(this));
+    }
+
+    /** Was eine Aktions-Zeile im Mods-Menue beim Klick tut. */
+    private Runnable actionFor(String action) {
+        return switch (action) {
+            case "arnestyles.mod.hand_editor" -> this::openHandEditor;
+            case "arnestyles.mod.customhud_editor" -> () -> com.arnestyles.client.mods.CustomHudBridge.openEditor(this);
+            case "arnestyles.mod.customhud_folder" -> com.arnestyles.client.mods.CustomHudBridge::openProfileFolder;
+            case "arnestyles.mod.crosshair_editor" -> () -> openChild(new CrosshairEditorScreen(this));
+            case "arnestyles.mod.hud_editor" -> () -> {
+                com.arnestyles.client.mods.HudLayout.showVanilla = false;
+                openHudEditor();
+            };
+            case "arnestyles.mod.vanilla_hud_editor" -> () -> {
+                com.arnestyles.client.mods.HudLayout.showVanilla = true;
+                openHudEditor();
+            };
+            case "arnestyles.mod.show_intro" -> () -> openChild(new IntroScreen(this));
+            case "arnestyles.mod.spotify_keys" -> () -> {
+                if (this.client != null) {
+                    openChild(new net.minecraft.client.gui.screen.option.KeybindsScreen(this, this.client.options));
+                }
+            };
+            default -> this::openHudEditor;
+        };
+    }
+
     private void openHudEditor() {
         if (this.client == null) {
             return;
@@ -2367,6 +2586,9 @@ public class StylesScreen extends Screen {
     private static int activeStyle;
     private static boolean bevel;
     private static int switchStyle;
+    /** Inspector rechts an, grosses Dashboard-Fenster. */
+    private static boolean inspectorOn = true;
+    private static boolean bigLayout;
     /** Name des Seitenleisten-Eintrags unter der Maus, wenn nur Symbole zu sehen sind. */
     private @Nullable Text sideTip;
     private int sideTipY;
@@ -2378,6 +2600,16 @@ public class StylesScreen extends Screen {
     private static String modTab = "hud";
     /** Anzahl Zeilen der Mods-Seite beim letzten Zeichnen (zum Scrollen). */
     private int modLineCount;
+    /** Suche und Filter der Mods-Seite (0 = alle, 1 = an, 2 = aus). */
+    private final StringBuilder modSearch = new StringBuilder();
+    private int modFilter;
+    /** Ueberschrift des Blocks, dessen Reset einmal angeklickt wurde. */
+    private @Nullable String blockResetArmed;
+    /** Farbe, deren Hex-Wert gerade eingetippt wird. */
+    private @Nullable String hexEditKey;
+    /** Pack, dessen Entfernen einmal angeklickt wurde. */
+    private @Nullable Path packRemoveArmed;
+    private final StringBuilder hexBuffer = new StringBuilder();
     private GuiTheme.Slot themeSlot = GuiTheme.Slot.ACCENT;
     private @Nullable String themeDeleteArmed;
 
@@ -2454,6 +2686,18 @@ public class StylesScreen extends Screen {
     private void updateScale() {
         if (draggingSlider == null || draggingSlider.slider() != SCALE_SLIDER) {
             float wanted = ConfigManager.get().guiScale;
+            if (bigLayout && this.client != null) {
+                // Dashboard: eigene, scharfe Pixelgroesse (ganzzahlig), damit bei 1920x1080 ein grosses Fenster mit
+                // kleiner Schrift entsteht, unabhaengig von der GUI-Groesse von Minecraft
+                var window = this.client.getWindow();
+                int eff = Math.max(1, Math.min(window.getFramebufferWidth() / 960, window.getFramebufferHeight() / 540));
+                wanted *= eff / (float) window.getScaleFactor();
+            } else if (inspectorOn && wanted <= 1.0f && this.client != null) {
+                // Normales Fenster mit Live-Vorschau: so weit verkleinern (scharf, ganzzahlig), dass 600 Pixel Breite passen
+                var window = this.client.getWindow();
+                int eff = Math.max(1, Math.min(window.getFramebufferWidth() / 616, window.getFramebufferHeight() / 378));
+                wanted = Math.min(wanted, eff / (float) window.getScaleFactor());
+            }
             if (wanted > 1.0f) {
                 // Nie so gross, dass das Menue nicht mehr ins Fenster passt
                 wanted = Math.max(1.0f, Math.min(wanted, Math.min(this.width / 360.0f, this.height / 240.0f)));
@@ -2478,6 +2722,7 @@ public class StylesScreen extends Screen {
         C_CARD_HOVER = t.argb(GuiTheme.Slot.CARD_HOVER);
         C_ACCENT = t.argb(GuiTheme.Slot.ACCENT);
         C_ACCENT_SOFT = 0x40000000 | t.rgb(GuiTheme.Slot.ACCENT);
+        C_ACCENT2 = t.argb(GuiTheme.Slot.ACCENT2);
         C_TEXT = t.argb(GuiTheme.Slot.TEXT);
         C_MUTED = t.argb(GuiTheme.Slot.MUTED);
         C_OK = t.argb(GuiTheme.Slot.OK);
@@ -2493,6 +2738,17 @@ public class StylesScreen extends Screen {
         activeStyle = GuiLayout.Option.ACTIVE.value();
         bevel = GuiLayout.Option.BUTTONS.value() == 1;
         switchStyle = GuiLayout.Option.SWITCHES.value();
+        inspectorOn = GuiLayout.Option.INSPECTOR.value() == 0;
+        bigLayout = GuiLayout.Option.SIZE.value() == 1;
+        if (GuiLayout.Option.GLASS.value() == 2) {
+            // Leicht durchsichtig: die (von Minecraft verschwommene) Spielwelt bleibt erkennbar, Inhalte gut lesbar
+            C_DIM = 0x60000000 | (C_DIM & 0xFFFFFF);
+            C_PANEL = 0xD8000000 | (C_PANEL & 0xFFFFFF);
+            C_SIDEBAR = 0xC0000000 | (C_SIDEBAR & 0xFFFFFF);
+            C_HEADER_TOP = 0xE4000000 | (C_HEADER_TOP & 0xFFFFFF);
+            C_HEADER_BOTTOM = 0xE4000000 | (C_HEADER_BOTTOM & 0xFFFFFF);
+            C_CARD = 0xE8000000 | (C_CARD & 0xFFFFFF);
+        }
         if (GuiLayout.Option.GLASS.value() == 1) {
             // Durchsichtig: Spielwelt scheint durch
             C_DIM = 0x50000000 | (C_DIM & 0xFFFFFF);
@@ -2603,6 +2859,21 @@ public class StylesScreen extends Screen {
         }
 
         int y1 = y0 + ESSENTIAL_ROW_H + 4;
+        // Saison-Designs: Weihnachten, Ostern und Halloween automatisch
+        String season = GuiTheme.seasonTheme(java.time.LocalDate.now());
+        Text seasonLabel = Text.translatable("arnestyles.theme.seasonal");
+        drawTintSwitch(context, paneX, y1, w, seasonLabel, ConfigManager.get().seasonalThemes, "arnestyles.theme.seasonal.desc", mouseX, mouseY,
+            () -> {
+                ConfigManager.get().seasonalThemes = !ConfigManager.get().seasonalThemes;
+                ConfigManager.save();
+                applyTheme();
+            });
+        if (inside(mouseX, mouseY, paneX, y1, paneX + w, y1 + ESSENTIAL_ROW_H)) {
+            hovered = season != null
+                ? Text.translatable("arnestyles.theme.seasonal.now", Text.translatable("arnestyles.theme.season." + season))
+                : Text.translatable("arnestyles.theme.seasonal.desc");
+        }
+        y1 += ESSENTIAL_ROW_H + 2;
         GuiTheme.Theme active = GuiTheme.active();
         int lw = Math.max(130, (w - 8) * 45 / 100);
         int rx = paneX + lw + 8;
@@ -2950,6 +3221,15 @@ public class StylesScreen extends Screen {
     private void drawImport(DrawContext context, int mouseX, int mouseY) {
         int headY = top + HEADER_H + 7;
         drawBigText(context, Text.translatable("arnestyles.gui.import"), paneX, headY, 1.3f, C_TEXT);
+        // Knoepfe oben rechts: Ordner oeffnen (neutral), Upload Ordner und Upload .zip (violett)
+        int bx = drawPillRight(context, paneRight, headY - 2, Text.translatable("arnestyles.import.open_folder"), C_TEXT, mouseX, mouseY, this::openFolder);
+        bx = drawAccentButton(context, bx - 4, headY - 2, Text.translatable("arnestyles.import.upload_folder"), mouseX, mouseY, () -> pickPacks(true));
+        bx = drawAccentButton(context, bx - 4, headY - 2, Text.translatable("arnestyles.import.upload_zip"), mouseX, mouseY, () -> pickPacks(false));
+        int removed = PackImporter.removedCount();
+        if (removed > 0) {
+            drawPillRight(context, bx - 4, headY - 2, Text.translatable("arnestyles.import.restore", removed), C_WARN, mouseX, mouseY,
+                PackImporter::restoreAll);
+        }
         int w = paneRight - paneX;
         int infoY = top + HEADER_H + 26;
         int y0 = top + HEADER_H + 42;
@@ -2958,7 +3238,8 @@ public class StylesScreen extends Screen {
         List<Path> packs = PackImporter.packs();
         // Ablage-Flaeche mit "Alle importieren"
         int boxH = 30;
-        roundBordered(context, paneX, y0, paneRight, y0 + boxH, C_ACCENT, C_ACCENT_SOFT);
+        context.fill(paneX, y0, paneRight, y0 + boxH, (C_ACCENT2 & 0xFFFFFF) | 0x18000000);
+        drawDashedRect(context, paneX, y0, paneRight, y0 + boxH, C_ACCENT2);
         drawIconAsset(context, IMPORT_ICON, paneX + 6, y0 + 7);
         int allX = paneRight - 6;
         if (!packs.isEmpty()) {
@@ -3006,7 +3287,18 @@ public class StylesScreen extends Screen {
                 nameEnd = paneRight - 8 - this.textRenderer.getWidth(state);
                 text(context, state, nameEnd, y + 5, C_MUTED);
             } else {
+                boolean armedRemove = pack.equals(packRemoveArmed);
                 nameEnd = drawPillRight(context, paneRight - 3, y + 2,
+                    Text.translatable(armedRemove ? "arnestyles.import.remove_confirm" : "arnestyles.import.remove"),
+                    armedRemove ? C_DANGER : C_MUTED, mouseX, mouseY, () -> {
+                        if (pack.equals(packRemoveArmed)) {
+                            PackImporter.remove(pack);
+                            packRemoveArmed = null;
+                        } else {
+                            packRemoveArmed = pack;
+                        }
+                    });
+                nameEnd = drawPillRight(context, nameEnd - 4, y + 2,
                     Text.translatable(result == null ? "arnestyles.import.one" : "arnestyles.import.again"),
                     result == null ? C_OK : C_MUTED, mouseX, mouseY, () -> PackImporter.enqueue(pack));
             }
@@ -3077,6 +3369,66 @@ public class StylesScreen extends Screen {
             line = Text.translatable("arnestyles.import.info");
         }
         text(context, this.textRenderer.trimToWidth(line.getString(), w), paneX, infoY, color);
+    }
+
+    /** Violetter Hauptknopf, rechtsbuendig bei x2. Gibt die linke Kante zurueck. */
+    private int drawAccentButton(DrawContext context, int x2, int y, Text label, int mouseX, int mouseY, Runnable action) {
+        int x1 = x2 - this.textRenderer.getWidth(label) - 12;
+        boolean over = inside(mouseX, mouseY, x1, y, x2, y + 14);
+        roundBordered(context, x1, y, x2, y + 14, C_ACCENT2, over ? GuiTheme.mix(C_ACCENT2, 0xFFFFFFFF, 0.15f) : C_ACCENT2);
+        text(context, label, x1 + 6, y + 3, 0xFFFFFFFF);
+        hits.add(new Hit(x1, y, x2, y + 14, action));
+        return x1;
+    }
+
+    /** Gestrichelter Rahmen (Ablage-Flaeche). */
+    private static void drawDashedRect(DrawContext context, int x1, int y1, int x2, int y2, int color) {
+        for (int x = x1; x < x2; x += 7) {
+            int e = Math.min(x + 4, x2);
+            context.fill(x, y1, e, y1 + 1, color);
+            context.fill(x, y2 - 1, e, y2, color);
+        }
+        for (int y = y1; y < y2; y += 7) {
+            int e = Math.min(y + 4, y2);
+            context.fill(x1, y, x1 + 1, e, color);
+            context.fill(x2 - 1, y, x2, e, color);
+        }
+    }
+
+    /** Windows-Dateidialog (eigener Thread, damit das Spiel weiterlaeuft); gewaehlte Packs werden wie gezogene importiert. */
+    private void pickPacks(boolean folder) {
+        String title = Text.translatable(folder ? "arnestyles.import.upload_folder" : "arnestyles.import.upload_zip").getString();
+        String start = PackImporter.importDir().toAbsolutePath() + java.io.File.separator;
+        Thread thread = new Thread(() -> {
+            String result;
+            try {
+                if (folder) {
+                    result = org.lwjgl.util.tinyfd.TinyFileDialogs.tinyfd_selectFolderDialog(title, start);
+                } else {
+                    try (org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush()) {
+                        org.lwjgl.PointerBuffer filters = stack.mallocPointer(1);
+                        filters.put(stack.UTF8("*.zip"));
+                        filters.flip();
+                        result = org.lwjgl.util.tinyfd.TinyFileDialogs.tinyfd_openFileDialog(title, start, filters, "Resource Pack (.zip)", true);
+                    }
+                }
+            } catch (Throwable e) {
+                com.arnestyles.ArneStyles.LOGGER.warn("Dateidialog nicht verfuegbar: {}", e.toString());
+                return;
+            }
+            if (result == null || result.isBlank()) {
+                return;
+            }
+            List<Path> paths = new ArrayList<>();
+            for (String part : result.split("\\|")) {
+                if (!part.isBlank()) {
+                    paths.add(Path.of(part));
+                }
+            }
+            net.minecraft.client.MinecraftClient.getInstance().execute(() -> onFilesDropped(paths));
+        }, "ArneTweaks-FilePicker");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     /** "Totems 3, Schwerter 12, ... (5 Dateien ohne Kategorie)" */
@@ -3173,19 +3525,99 @@ public class StylesScreen extends Screen {
             new ModGroup("hud", List.of(
                 ModRow.section("arnestyles.mod.section.hud_editor", null),
                 ModRow.action("arnestyles.mod.hud_editor"),
+                ModRow.action("arnestyles.mod.hand_editor"),
+                ModRow.section("arnestyles.mod.section.vanilla_hud", null),
+                ModRow.action("arnestyles.mod.vanilla_hud_editor"),
+                ModRow.toggle(ModSetting.Toggle.SCOREBOARD_HIDE),
+                ModRow.toggle(ModSetting.Toggle.SCOREBOARD_HIDE_NUMBERS),
+                ModRow.toggle(ModSetting.Toggle.SCOREBOARD_SHADOW),
+                ModRow.slider(ModSetting.Slider.SCOREBOARD_BG_OPACITY),
+                ModRow.toggle(ModSetting.Toggle.BOSSBAR_HIDE),
+                ModRow.toggle(ModSetting.Toggle.HELD_ITEM_NAME_HIDE),
+                ModRow.toggle(ModSetting.Toggle.EFFECT_ICONS_HIDE),
+                ModRow.section("arnestyles.mod.section.hotbar", null),
+                ModRow.toggle(ModSetting.Toggle.HOTBAR_SMOOTH),
+                new ModRow(null, null, null, true, null, "hotbar_select_color"),
+                ModRow.slider(ModSetting.Slider.HOTBAR_OPACITY),
+                ModRow.section("arnestyles.mod.section.hud_style", null),
+                new ModRow(null, null, null, true, null, "hud_text_color"),
+                new ModRow(null, null, null, true, null, "hud_bg_color"),
+                ModRow.slider(ModSetting.Slider.HUD_BG_OPACITY),
+                ModRow.toggle(ModSetting.Toggle.HUD_TEXT_SHADOW),
+                ModRow.toggle(ModSetting.Toggle.HUD_BORDER),
+                new ModRow(null, null, null, true, null, "hud_border_color"),
+                new ModRow(null, null, null, true, null, "hud_accent_color"),
                 ModRow.section("arnestyles.mod.section.info_hud", null),
                 ModRow.toggle(ModSetting.Toggle.KEYSTROKES),
                 ModRow.toggle(ModSetting.Toggle.KEYSTROKES_CPS),
+                ModRow.toggle(ModSetting.Toggle.KEYSTROKES_MOUSE),
+                ModRow.toggle(ModSetting.Toggle.KEYSTROKES_SPACE),
                 ModRow.toggle(ModSetting.Toggle.CPS_HUD),
                 ModRow.toggle(ModSetting.Toggle.FPS_HUD),
                 ModRow.toggle(ModSetting.Toggle.PING_HUD),
                 ModRow.toggle(ModSetting.Toggle.COORDS_HUD),
+                ModRow.toggle(ModSetting.Toggle.COORDS_DIRECTION),
+                ModRow.section("arnestyles.mod.section.extra_hud", null),
+                ModRow.toggle(ModSetting.Toggle.CLOCK_HUD),
+                ModRow.toggle(ModSetting.Toggle.CLOCK_SECONDS),
+                ModRow.toggle(ModSetting.Toggle.CLOCK_12H),
+                ModRow.toggle(ModSetting.Toggle.CLOCK_DATE),
+                ModRow.toggle(ModSetting.Toggle.CLOCK_YEAR),
+                ModRow.toggle(ModSetting.Toggle.ELYTRA_HUD),
+                ModRow.toggle(ModSetting.Toggle.ELYTRA_ONLY_FLYING),
+                ModRow.toggle(ModSetting.Toggle.ELYTRA_KMH),
+                ModRow.toggle(ModSetting.Toggle.SERVER_HUD),
+                ModRow.toggle(ModSetting.Toggle.DAY_HUD),
+                ModRow.toggle(ModSetting.Toggle.DAY_TIME),
                 ModRow.section("arnestyles.mod.section.pvp_hud", null),
                 ModRow.toggle(ModSetting.Toggle.COMBO_HUD),
+                ModRow.slider(ModSetting.Slider.COMBO_TIMEOUT),
                 ModRow.toggle(ModSetting.Toggle.PEARL_COOLDOWN),
                 ModRow.toggle(ModSetting.Toggle.ARMOR_WARNING),
+                ModRow.slider(ModSetting.Slider.ARMOR_WARNING_PERCENT),
                 ModRow.toggle(ModSetting.Toggle.ARMOR_WARNING_SOUND),
                 ModRow.toggle(ModSetting.Toggle.TARGET_HUD),
+                ModRow.section("arnestyles.mod.section.item_counter", null),
+                ModRow.toggle(ModSetting.Toggle.ITEM_COUNTER),
+                ModRow.toggle(ModSetting.Toggle.ITEM_COUNTER_VERTICAL),
+                ModRow.toggle(ModSetting.Toggle.ITEM_COUNTER_HIDE_ZERO),
+                ModRow.slider(ModSetting.Slider.ITEM_COUNTER_WARN),
+                new ModRow(null, null, null, true, null, "item_counter_warn_color"),
+                ModRow.toggle(ModSetting.Toggle.COUNT_TOTEM),
+                ModRow.toggle(ModSetting.Toggle.COUNT_PEARL),
+                ModRow.toggle(ModSetting.Toggle.COUNT_CRYSTAL),
+                ModRow.toggle(ModSetting.Toggle.COUNT_OBSIDIAN),
+                ModRow.toggle(ModSetting.Toggle.COUNT_ANCHOR),
+                ModRow.toggle(ModSetting.Toggle.COUNT_GLOWSTONE),
+                ModRow.toggle(ModSetting.Toggle.COUNT_GAPPLE),
+                ModRow.toggle(ModSetting.Toggle.COUNT_XP),
+                ModRow.toggle(ModSetting.Toggle.COUNT_ARROW),
+                ModRow.toggle(ModSetting.Toggle.COUNT_COBWEB),
+                ModRow.toggle(ModSetting.Toggle.COUNT_WIND_CHARGE),
+                ModRow.toggle(ModSetting.Toggle.COUNT_SPLASH),
+                ModRow.section("arnestyles.mod.section.tab_list", null),
+                ModRow.toggle(ModSetting.Toggle.TAB_PING),
+                ModRow.toggle(ModSetting.Toggle.TAB_PING_COLORS),
+                ModRow.toggle(ModSetting.Toggle.TAB_PING_SUFFIX),
+                ModRow.slider(ModSetting.Slider.TAB_PING_GOOD),
+                ModRow.slider(ModSetting.Slider.TAB_PING_BAD),
+                ModRow.section("arnestyles.mod.section.spotify", null),
+                ModRow.toggle(ModSetting.Toggle.SPOTIFY_HUD),
+                ModRow.slider(ModSetting.Slider.SPOTIFY_MODE),
+                ModRow.toggle(ModSetting.Toggle.SPOTIFY_COVER),
+                ModRow.slider(ModSetting.Slider.SPOTIFY_WIDTH),
+                ModRow.toggle(ModSetting.Toggle.SPOTIFY_LYRICS),
+                ModRow.slider(ModSetting.Slider.SPOTIFY_OFFSET),
+                ModRow.toggle(ModSetting.Toggle.SPOTIFY_HIDE_PAUSED),
+                ModRow.toggle(ModSetting.Toggle.SPOTIFY_ANY_PLAYER),
+                ModRow.action("arnestyles.mod.spotify_keys"),
+                new ModRow(null, null, null, true, null, "spotify_accent"),
+                ModRow.slider(ModSetting.Slider.SPOTIFY_BG_OPACITY),
+                ModRow.toggle(ModSetting.Toggle.SPOTIFY_SHADOW),
+                ModRow.section("arnestyles.mod.section.customhud", null),
+                ModRow.toggle(ModSetting.Toggle.CUSTOMHUD_ON),
+                ModRow.action("arnestyles.mod.customhud_editor"),
+                ModRow.action("arnestyles.mod.customhud_folder"),
                 ModRow.section("arnestyles.mod.section.totem_counter", ModSetting.TOTEM_COUNTER_MOD),
                 ModRow.toggle(ModSetting.Toggle.TOTEM_COUNTER),
                 ModRow.toggle(ModSetting.Toggle.TOTEM_COUNTER_HUD),
@@ -3203,9 +3635,26 @@ public class StylesScreen extends Screen {
                 ModRow.toggle(ModSetting.Toggle.APPLESKIN_TOOLTIP)
             )),
             new ModGroup("pvp", List.of(
+                ModRow.section("arnestyles.mod.section.crosshair", null),
+                ModRow.toggle(ModSetting.Toggle.CUSTOM_CROSSHAIR),
+                ModRow.action("arnestyles.mod.crosshair_editor"),
+                new ModRow(null, null, null, true, null, "crosshair_color"),
+                ModRow.slider(ModSetting.Slider.CROSSHAIR_OPACITY),
+                ModRow.slider(ModSetting.Slider.CROSSHAIR_SCALE),
+                ModRow.toggle(ModSetting.Toggle.CROSSHAIR_OUTLINE),
+                new ModRow(null, null, null, true, null, "crosshair_outline_color"),
+                ModRow.section("arnestyles.mod.section.cooldown", null),
+                ModRow.toggle(ModSetting.Toggle.COOLDOWN_INDICATOR),
+                ModRow.slider(ModSetting.Slider.COOLDOWN_STYLE),
+                new ModRow(null, null, null, true, null, "cooldown_color"),
                 ModRow.section("arnestyles.mod.section.pvp_visuals", null),
                 ModRow.toggle(ModSetting.Toggle.HIT_COLOR),
                 new ModRow(null, null, null, true, null, "hit_color"),
+                ModRow.toggle(ModSetting.Toggle.CROSSHAIR_TARGET),
+                new ModRow(null, null, null, true, null, "crosshair_target_color"),
+                ModRow.toggle(ModSetting.Toggle.HIT_CRITS),
+                ModRow.toggle(ModSetting.Toggle.HIT_SHARPNESS),
+                ModRow.slider(ModSetting.Slider.HIT_PARTICLES),
                 ModRow.slider(ModSetting.Slider.PLAYER_FIRE),
                 ModRow.section("arnestyles.mod.section.crystal", null),
                 ModRow.slider(ModSetting.Slider.CRYSTAL_SIZE),
@@ -3221,6 +3670,10 @@ public class StylesScreen extends Screen {
                 ModRow.section("arnestyles.mod.section.totem_pop", null),
                 ModRow.action(POP_SOUND_ROW),
                 ModRow.slider(ModSetting.Slider.TOTEM_POP_VOLUME),
+                ModRow.slider(ModSetting.Slider.TOTEM_POP_PITCH),
+                ModRow.slider(ModSetting.Slider.TOTEM_POP_STYLE),
+                ModRow.slider(ModSetting.Slider.TOTEM_POP_SPEED),
+                ModRow.slider(ModSetting.Slider.TOTEM_PARTICLE_COLOR),
                 ModRow.section("arnestyles.mod.section.hitboxes", ModSetting.COMBAT_HITBOXES_MOD),
                 ModRow.toggle(ModSetting.Toggle.HITBOXES),
                 new ModRow(null, null, null, true, null, "hitbox_color"),
@@ -3260,6 +3713,13 @@ public class StylesScreen extends Screen {
                 ModRow.toggle(ModSetting.Toggle.SHIELD_SOUNDS)
             )),
             new ModGroup("visuals", List.of(
+                ModRow.section("arnestyles.mod.section.nametags", null),
+                ModRow.toggle(ModSetting.Toggle.NAMETAGS),
+                ModRow.toggle(ModSetting.Toggle.NAMETAG_HEALTH),
+                ModRow.toggle(ModSetting.Toggle.NAMETAG_PING),
+                ModRow.toggle(ModSetting.Toggle.NAMETAG_SHADOW),
+                ModRow.slider(ModSetting.Slider.NAMETAG_SCALE),
+                ModRow.slider(ModSetting.Slider.NAMETAG_BG_OPACITY),
                 ModRow.section("arnestyles.mod.section.block_outline", null),
                 ModRow.toggle(ModSetting.Toggle.BLOCK_OUTLINE),
                 new ModRow(null, null, null, true, null, "outline_color"),
@@ -3272,12 +3732,25 @@ public class StylesScreen extends Screen {
                 new ModRow(null, null, null, true, null, "sky_color"),
                 ModRow.section("arnestyles.mod.section.items", null),
                 ModRow.toggle(ModSetting.Toggle.ITEM_PHYSICS),
+                ModRow.toggle(ModSetting.Toggle.HIDE_OWN_EFFECT_PARTICLES),
+                ModRow.section("arnestyles.mod.section.animations", null),
+                ModRow.toggle(ModSetting.Toggle.ANIM_NO_COOLDOWN),
+                ModRow.slider(ModSetting.Slider.ANIM_EQUIP),
+                ModRow.slider(ModSetting.Slider.ANIM_SWING_SPEED),
+                ModRow.slider(ModSetting.Slider.ANIM_SWING_MOVE),
+                ModRow.slider(ModSetting.Slider.ANIM_SWING_ROTATION),
+                ModRow.slider(ModSetting.Slider.ANIM_EAT),
+                ModRow.toggle(ModSetting.Toggle.ANIM_EAT_BOB),
+                ModRow.slider(ModSetting.Slider.HAND_X),
+                ModRow.slider(ModSetting.Slider.HAND_Y),
+                ModRow.slider(ModSetting.Slider.HAND_Z),
                 ModRow.section("arnestyles.mod.section.motion_blur", ModSetting.MOTION_BLUR_MOD),
                 ModRow.toggle(ModSetting.Toggle.MOTION_BLUR),
                 ModRow.slider(ModSetting.Slider.MOTION_BLUR_STRENGTH),
                 ModRow.section("arnestyles.mod.section.inventory_scale", null),
                 ModRow.slider(ModSetting.Slider.INVENTORY_SCALE)
             )),
+            new ModGroup("sounds", soundRows()),
             new ModGroup("comfort", List.of(
                 ModRow.section("arnestyles.mod.section.zoom", ModSetting.ZOOMIFY_MOD),
                 ModRow.toggle(ModSetting.Toggle.ZOOM),
@@ -3289,12 +3762,34 @@ public class StylesScreen extends Screen {
                 ModRow.toggle(ModSetting.Toggle.FREELOOK),
                 ModRow.toggle(ModSetting.Toggle.FREELOOK_THIRD_PERSON),
                 ModRow.toggle(ModSetting.Toggle.AUTO_GG),
+                ModRow.toggle(ModSetting.Toggle.TOGGLE_SPRINT),
+                ModRow.toggle(ModSetting.Toggle.TOGGLE_SNEAK),
+                ModRow.toggle(ModSetting.Toggle.DEATH_POINT),
+                ModRow.slider(ModSetting.Slider.DEATH_POINT_MINUTES),
+                ModRow.toggle(ModSetting.Toggle.WAYPOINTS),
+                ModRow.slider(ModSetting.Slider.WAYPOINT_COUNT),
+                ModRow.section("arnestyles.mod.section.chat", null),
+                ModRow.toggle(ModSetting.Toggle.CHAT_TIMESTAMPS),
+                ModRow.toggle(ModSetting.Toggle.CHAT_SECONDS),
+                new ModRow(null, null, null, true, null, "chat_time_color"),
+                ModRow.toggle(ModSetting.Toggle.CHAT_STACK),
                 ModRow.section("arnestyles.mod.section.no_chat_restrictions", ModSetting.NO_CHAT_RESTRICTIONS_MOD),
                 ModRow.toggle(ModSetting.Toggle.NO_CHAT_RESTRICTIONS),
                 ModRow.section("arnestyles.mod.section.borderless", ModSetting.CUBES_WITHOUT_BORDERS_MOD),
-                ModRow.toggle(ModSetting.Toggle.BORDERLESS_FULLSCREEN)
+                ModRow.toggle(ModSetting.Toggle.BORDERLESS_FULLSCREEN),
+                ModRow.section("arnestyles.mod.section.intro", null),
+                ModRow.action("arnestyles.mod.show_intro")
             ))
         );
+    }
+
+    private static List<ModRow> soundRows() {
+        List<ModRow> rows = new ArrayList<>();
+        rows.add(ModRow.section("arnestyles.mod.section.sound_mixer", null));
+        for (com.arnestyles.client.mods.SoundMixer.Group group : com.arnestyles.client.mods.SoundMixer.Group.values()) {
+            rows.add(ModRow.slider(group));
+        }
+        return rows;
     }
 
     /** Sichtbare Zeilen: jede Oberkategorie als Kopfzeile, darunter ihre Mods, wenn sie aufgeklappt ist. */
@@ -3331,6 +3826,8 @@ public class StylesScreen extends Screen {
             drawSwitch(context, tx + (tw - 22) / 2, y + 21, on, on && (!modEnabled || toggle.blockedByMod()));
             hits.add(new Hit(tx, y, tx + tw, y2, toggle::toggle));
             if (over) {
+                inspectToggle = toggle;
+                inspectSlider = null;
                 hovered = toggle.blockedByMod()
                     ? Text.translatable("arnestyles.gui.mod_blocked.desc", toggle.externalMod())
                     : Text.translatable(toggle.descriptionKey());
@@ -3342,14 +3839,22 @@ public class StylesScreen extends Screen {
     private void drawMods(DrawContext context, int mouseX, int mouseY) {
         ArneStylesConfig config = ConfigManager.get();
         int headY = top + HEADER_H + 7;
-        drawBigText(context, Text.translatable("arnestyles.gui.mods"), paneX, headY, 1.3f, C_TEXT);
+        Text modsTitle = Text.translatable("arnestyles.gui.mods");
+        drawBigText(context, modsTitle, paneX, headY, 1.3f, C_TEXT);
+        drawModSearch(context, paneX + Math.round(this.textRenderer.getWidth(modsTitle) * 1.3f), headY, mouseX, mouseY);
+        boolean searching = modSearching();
 
         int view = GuiLayout.Option.MODS_VIEW.value();
         int paneW = paneRight - paneX;
         int listTopY = top + HEADER_H + 42;
         Text hovered = null;
         List<ModRow> rows;
-        if (view == 0) {
+        if (searching) {
+            rows = filteredModRows();
+            if (rows.isEmpty()) {
+                text(context, Text.translatable("arnestyles.mods.no_results"), paneX, listTopY + 4, C_MUTED);
+            }
+        } else if (view == 0) {
             rows = modRows();
         } else {
             // Reiter fuer die Oberkategorien, darunter nur deren Mods
@@ -3381,6 +3886,19 @@ public class StylesScreen extends Screen {
             listTopY += 18;
             rows = modGroups().stream().filter(g -> g.key().equals(modTab)).findFirst().orElseThrow().rows();
         }
+        if (view == 3) {
+            Text dashHover = drawModDashboard(context, rows, paneX, listTopY, paneW, cardsBottom, mouseX, mouseY);
+            if (dashHover != null) {
+                hovered = dashHover;
+            }
+            if (hudEditorHint && hovered == null) {
+                hovered = Text.translatable("arnestyles.mod.hud_editor.no_world");
+            }
+            String dashInfo = hovered != null ? hovered.getString() : Text.translatable("arnestyles.gui.mods_info").getString();
+            text(context, this.textRenderer.trimToWidth(dashInfo, paneRight - paneX), paneX, top + HEADER_H + 26,
+                hovered != null ? C_TEXT : C_MUTED);
+            return;
+        }
         // Zeilen bilden: bei Kacheln stehen mehrere Schalter nebeneinander
         int tileCols = Math.max(2, Math.min(4, paneW / 105));
         List<List<ModRow>> lines = new ArrayList<>();
@@ -3400,7 +3918,7 @@ public class StylesScreen extends Screen {
         for (int li = cardScroll; li < lines.size(); li++) {
             List<ModRow> line = lines.get(li);
             boolean tiles = view == 2 && line.get(0).toggle() != null;
-            int lineH = tiles ? 2 * ESSENTIAL_ROW_H : ESSENTIAL_ROW_H;
+            int lineH = tiles ? 2 * ESSENTIAL_ROW_H : modRowHeight(line.get(0), paneW);
             if (lineY + lineH - 2 > cardsBottom + 1) {
                 break;
             }
@@ -3415,169 +3933,13 @@ public class StylesScreen extends Screen {
             ModRow row = line.get(0);
             boolean groupRow = row.action() != null && row.action().startsWith(GROUP_ROW);
             // Mods in einer Oberkategorie leicht eingerueckt
-            int x = groupRow || view > 0 ? paneX : paneX + 8;
-            int w = groupRow || view > 0 ? paneW : paneW - 8;
+            int x = groupRow || view > 0 || searching ? paneX : paneX + 8;
+            int w = groupRow || view > 0 || searching ? paneW : paneW - 8;
             int y = lineY;
             lineY += lineH;
-            int y2 = y + ESSENTIAL_ROW_H - 2;
-            if (groupRow) {
-                String groupKey = row.action().substring(GROUP_ROW.length());
-                ModGroup group = modGroups().stream().filter(g -> g.key().equals(groupKey)).findFirst().orElseThrow();
-                boolean open = OPEN_MOD_GROUPS.contains(groupKey);
-                boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
-                if (over) {
-                    hovered = Text.translatable("arnestyles.mod.group." + groupKey + ".desc");
-                }
-                roundBordered(context, x, y, x + w, y2, over || open ? C_ACCENT : C_EDGE, over ? C_CARD_HOVER : C_CARD);
-                // Pfeil: zeigt nach rechts (zu) oder nach unten (offen)
-                int ax = x + 8;
-                int ay = y + 5;
-                for (int k = 0; k < 4; k++) {
-                    if (open) {
-                        context.fill(ax + k, ay + 2 + k, ax + 7 - k, ay + 3 + k, C_ACCENT);
-                    } else {
-                        context.fill(ax + 1 + k, ay + k, ax + 2 + k, ay + 7 - k, C_ACCENT);
-                    }
-                }
-                text(context, Text.translatable("arnestyles.mod.group." + groupKey), x + 20, y + 5, C_TEXT);
-                Text side = Text.translatable("arnestyles.mod.group.count", group.mods(), group.activeToggles());
-                text(context, side, x + w - 8 - this.textRenderer.getWidth(side), y + 5, C_MUTED);
-                hits.add(new Hit(x, y, x + w, y2, () -> {
-                    if (!OPEN_MOD_GROUPS.remove(groupKey)) {
-                        OPEN_MOD_GROUPS.add(groupKey);
-                    }
-                }));
-            } else if (POP_SOUND_ROW.equals(row.action())) {
-                // Pop-Sound: Name mit Pfeilen zum Durchblaettern, Klick auf den Namen spielt ihn ab
-                boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
-                if (over) {
-                    hovered = Text.translatable("arnestyles.mod.totem_pop_sound.desc");
-                }
-                round(context, x, y, x + w, y2, over ? C_CARD_HOVER : C_CARD);
-                text(context, Text.translatable("arnestyles.mod.totem_pop_sound"), x + 8, y + 5, C_TEXT);
-                int index = PvpVisuals.popSoundIndex();
-                int nameW = 0;
-                for (String soundKey : PvpVisuals.POP_SOUND_KEYS) {
-                    nameW = Math.max(nameW, this.textRenderer.getWidth(Text.translatable("arnestyles.mod.totem_pop_sound." + soundKey)));
-                }
-                int px = drawPillRight(context, x + w - 4, y + 2, Text.literal(">"), C_TEXT, mouseX, mouseY,
-                    () -> PvpVisuals.selectPopSound(PvpVisuals.popSoundIndex() + 1));
-                int nx2 = px - 4;
-                int nx1 = nx2 - nameW - 22;
-                boolean overName = inside(mouseX, mouseY, nx1, y + 2, nx2, y + 16);
-                roundBordered(context, nx1, y + 2, nx2, y + 16, overName ? C_ACCENT : C_EDGE, C_FIELD);
-                Text name = Text.translatable("arnestyles.mod.totem_pop_sound." + PvpVisuals.POP_SOUND_KEYS[index]);
-                text(context, name, nx1 + 6, y + 5, C_ACCENT);
-                // kleines Lautsprecher-Zeichen zum Anhoeren
-                int sx = nx2 - 12;
-                context.fill(sx, y + 7, sx + 2, y + 11, overName ? C_ACCENT : C_MUTED);
-                context.fill(sx + 2, y + 6, sx + 3, y + 12, overName ? C_ACCENT : C_MUTED);
-                context.fill(sx + 3, y + 5, sx + 4, y + 13, overName ? C_ACCENT : C_MUTED);
-                context.fill(sx + 6, y + 7, sx + 7, y + 11, overName ? C_ACCENT : C_MUTED);
-                if (overName) {
-                    hovered = Text.translatable("arnestyles.mod.totem_pop_sound.play", index + 1, PvpVisuals.POP_SOUNDS.length);
-                }
-                hits.add(new Hit(nx1, y + 2, nx2, y + 16, PvpVisuals::previewPopSound));
-                drawPillRight(context, nx1 - 4, y + 2, Text.literal("<"), C_TEXT, mouseX, mouseY,
-                    () -> PvpVisuals.selectPopSound(PvpVisuals.popSoundIndex() - 1));
-            } else if (row.section() != null) {
-                int textEnd = x + 2 + this.textRenderer.getWidth(Text.translatable(row.section()));
-                text(context, Text.translatable(row.section()), x + 2, y + 6, C_ACCENT);
-                if (ModSetting.isLoaded(row.blockedBy())) {
-                    // Die einzelne Mod ist installiert: die eingebaute Version bleibt aus, damit nichts doppelt kommt
-                    Text note = Text.translatable("arnestyles.gui.mod_blocked");
-                    text(context, note, textEnd + 6, y + 6, C_MOD_BLOCKED);
-                    textEnd += 6 + this.textRenderer.getWidth(note);
-                    if (inside(mouseX, mouseY, x, y, x + w, y2)) {
-                        hovered = Text.translatable("arnestyles.gui.mod_blocked.desc", row.blockedBy());
-                    }
-                }
-                context.fill(textEnd + 6, y + 10, x + w, y + 11, C_EDGE);
-            } else if (row.toggle() != null) {
-                ModSetting.Toggle toggle = row.toggle();
-                boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
-                if (over) {
-                    hovered = toggle.blockedByMod()
-                        ? Text.translatable("arnestyles.gui.mod_blocked.desc", toggle.externalMod())
-                        : Text.translatable(toggle.descriptionKey());
-                }
-                round(context, x, y, x + w, y2, over ? C_CARD_HOVER : C_CARD);
-                text(context, Text.translatable(toggle.nameKey()), x + 8, y + 5,
-                    toggle.blockedByMod() ? C_MUTED : C_TEXT);
-                drawSwitch(context, x + w - 28, y + 3, toggle.value(), toggle.value() && (!config.modEnabled || toggle.blockedByMod()));
-                hits.add(new Hit(x, y, x + w, y2, toggle::toggle));
-            } else if (row.slider() != null) {
-                if (drawSliderRow(context, row.slider(), x, y, w, config.modEnabled, mouseX, mouseY, null)) {
-                    hovered = Text.translatable(row.slider().descriptionKey());
-                }
-            } else if (row.action() != null && !row.color()) {
-                boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
-                if (over) {
-                    hovered = Text.translatable(row.action() + ".desc");
-                }
-                round(context, x, y, x + w, y2, over ? C_CARD_HOVER : C_CARD);
-                text(context, Text.translatable(row.action()), x + 8, y + 5, C_TEXT);
-                Text open = Text.translatable("arnestyles.gui.open");
-                text(context, open, x + w - 8 - this.textRenderer.getWidth(open), y + 5, over ? C_ACCENT : C_MUTED);
-                hits.add(new Hit(x, y, x + w, y2, this::openHudEditor));
-            } else if (row.color()) {
-                // Farbzeile: Pop Chams (ohne Schluessel), Treffer-Farbe, Umrandung oder Himmel
-                String colorKey = row.action() == null ? "pop_chams_color" : row.action();
-                String nameKey = switch (colorKey) {
-                    case "hit_color" -> "arnestyles.mod.hit_color_pick";
-                    case "outline_color" -> "arnestyles.mod.outline_color";
-                    case "sky_color" -> "arnestyles.mod.sky_color_pick";
-                    case "hitbox_color", "hitbox_target_color", "hitbox_hurt_color", "hitbox_eye_color", "hitbox_look_color",
-                         "hitbox_outline_color" -> "arnestyles.mod." + colorKey + "_pick";
-                    default -> "arnestyles.mod.pop_chams_color";
-                };
-                int[] palette = "sky_color".equals(colorKey) ? WorldVisuals.SKY_COLORS
-                    : colorKey.startsWith("hitbox_") ? com.arnestyles.client.mods.CombatHitboxes.COLORS : ModSetting.POP_CHAMS_COLORS;
-                int current = switch (colorKey) {
-                    case "hit_color" -> config.hitColorRgb;
-                    case "outline_color" -> config.outlineColorRgb;
-                    case "sky_color" -> config.skyColorRgb;
-                    case "hitbox_color" -> config.hitboxRgb;
-                    case "hitbox_target_color" -> config.hitboxTargetRgb;
-                    case "hitbox_hurt_color" -> config.hitboxHurtRgb;
-                    case "hitbox_eye_color" -> config.hitboxEyeRgb;
-                    case "hitbox_look_color" -> config.hitboxLookRgb;
-                    case "hitbox_outline_color" -> config.hitboxOutlineRgb;
-                    default -> config.popChamsColor;
-                } & 0xFFFFFF;
-                boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
-                if (over) {
-                    hovered = Text.translatable(nameKey + ".desc");
-                }
-                round(context, x, y, x + w, y2, over ? C_CARD_HOVER : C_CARD);
-                text(context, Text.translatable(nameKey), x + 8, y + 5, C_TEXT);
-                int sx = x + w - 6;
-                for (int c = palette.length - 1; c >= 0; c--) {
-                    int rgb = palette[c];
-                    int x1 = sx - 12;
-                    if (current == rgb) {
-                        round(context, x1 - 1, y + 2, sx + 1, y2 - 2, C_TEXT);
-                    }
-                    round(context, x1, y + 3, sx, y2 - 3, 0xFF000000 | rgb);
-                    final int pick = rgb;
-                    hits.add(new Hit(x1, y + 2, sx, y2 - 2, () -> {
-                        ArneStylesConfig edit = ConfigManager.get();
-                        switch (colorKey) {
-                            case "hit_color" -> edit.hitColorRgb = pick;
-                            case "outline_color" -> edit.outlineColorRgb = pick;
-                            case "sky_color" -> edit.skyColorRgb = pick;
-                            case "hitbox_color" -> edit.hitboxRgb = pick;
-                            case "hitbox_target_color" -> edit.hitboxTargetRgb = pick;
-                            case "hitbox_hurt_color" -> edit.hitboxHurtRgb = pick;
-                            case "hitbox_eye_color" -> edit.hitboxEyeRgb = pick;
-                            case "hitbox_look_color" -> edit.hitboxLookRgb = pick;
-                            case "hitbox_outline_color" -> edit.hitboxOutlineRgb = pick;
-                            default -> edit.popChamsColor = pick;
-                        }
-                        ConfigManager.save();
-                    }));
-                    sx = x1 - 3;
-                }
+            Text rowHover = drawModRow(context, row, x, y, w, mouseX, mouseY);
+            if (rowHover != null) {
+                hovered = rowHover;
             }
         }
         if (hudEditorHint && hovered == null) {
@@ -3586,6 +3948,500 @@ public class StylesScreen extends Screen {
         String info = hovered != null ? hovered.getString() : Text.translatable("arnestyles.gui.mods_info").getString();
         text(context, this.textRenderer.trimToWidth(info, paneRight - paneX), paneX, top + HEADER_H + 26,
             hovered != null ? C_TEXT : C_MUTED);
+    }
+
+    /** Breite, unter der Farbzeilen zweizeilig werden (Name oben, Farben unten). */
+    private static final int COLOR_ROW_SPLIT = 330;
+
+    private static int modRowHeight(ModRow row, int w) {
+        return row.color() && w < COLOR_ROW_SPLIT ? 2 * ESSENTIAL_ROW_H : ESSENTIAL_ROW_H;
+    }
+
+    /** Zeichnet eine Zeile der Mods-Seite (Schalter, Regler, Farbe, Aktion, ...). Gibt die Erklaerung unter der Maus zurueck. */
+    private @Nullable Text drawModRow(DrawContext context, ModRow row, int x, int y, int w, int mouseX, int mouseY) {
+        ArneStylesConfig config = ConfigManager.get();
+        Text hovered = null;
+        int y2 = y + ESSENTIAL_ROW_H - 2;
+        boolean groupRow = row.action() != null && row.action().startsWith(GROUP_ROW);
+        if (groupRow) {
+            String groupKey = row.action().substring(GROUP_ROW.length());
+            ModGroup group = modGroups().stream().filter(g -> g.key().equals(groupKey)).findFirst().orElseThrow();
+            boolean open = OPEN_MOD_GROUPS.contains(groupKey);
+            boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
+            if (over) {
+                hovered = Text.translatable("arnestyles.mod.group." + groupKey + ".desc");
+            }
+            roundBordered(context, x, y, x + w, y2, over || open ? C_ACCENT : C_EDGE, over ? C_CARD_HOVER : C_CARD);
+            // Pfeil: zeigt nach rechts (zu) oder nach unten (offen)
+            int ax = x + 8;
+            int ay = y + 5;
+            for (int k = 0; k < 4; k++) {
+                if (open) {
+                    context.fill(ax + k, ay + 2 + k, ax + 7 - k, ay + 3 + k, C_ACCENT);
+                } else {
+                    context.fill(ax + 1 + k, ay + k, ax + 2 + k, ay + 7 - k, C_ACCENT);
+                }
+            }
+            text(context, Text.translatable("arnestyles.mod.group." + groupKey), x + 20, y + 5, C_TEXT);
+            // Sound-Mixer: Anzahl Regler und wie viele davon veraendert sind
+            long changedSounds = "sounds".equals(group.key()) ? ConfigManager.get().soundVolumes.size() : 0;
+            Text side = "sounds".equals(group.key())
+                ? Text.translatable("arnestyles.mod.group.sound_count", com.arnestyles.client.mods.SoundMixer.Group.values().length, changedSounds)
+                : Text.translatable("arnestyles.mod.group.count", group.mods(), group.activeToggles());
+            text(context, side, x + w - 8 - this.textRenderer.getWidth(side), y + 5, C_MUTED);
+            hits.add(new Hit(x, y, x + w, y2, () -> {
+                if (!OPEN_MOD_GROUPS.remove(groupKey)) {
+                    OPEN_MOD_GROUPS.add(groupKey);
+                }
+            }));
+        } else if (POP_SOUND_ROW.equals(row.action())) {
+            // Pop-Sound: Name mit Pfeilen zum Durchblaettern, Klick auf den Namen spielt ihn ab
+            boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
+            if (over) {
+                hovered = Text.translatable("arnestyles.mod.totem_pop_sound.desc");
+            }
+            round(context, x, y, x + w, y2, over ? C_CARD_HOVER : C_CARD);
+            text(context, Text.translatable("arnestyles.mod.totem_pop_sound"), x + 8, y + 5, C_TEXT);
+            int index = PvpVisuals.popSoundIndex();
+            int nameW = 0;
+            for (String soundKey : PvpVisuals.POP_SOUND_KEYS) {
+                nameW = Math.max(nameW, this.textRenderer.getWidth(Text.translatable("arnestyles.mod.totem_pop_sound." + soundKey)));
+            }
+            int px = drawPillRight(context, x + w - 4, y + 2, Text.literal(">"), C_TEXT, mouseX, mouseY,
+                () -> PvpVisuals.selectPopSound(PvpVisuals.popSoundIndex() + 1));
+            int nx2 = px - 4;
+            int nx1 = nx2 - nameW - 22;
+            boolean overName = inside(mouseX, mouseY, nx1, y + 2, nx2, y + 16);
+            roundBordered(context, nx1, y + 2, nx2, y + 16, overName ? C_ACCENT : C_EDGE, C_FIELD);
+            Text name = Text.translatable("arnestyles.mod.totem_pop_sound." + PvpVisuals.POP_SOUND_KEYS[index]);
+            text(context, name, nx1 + 6, y + 5, C_ACCENT);
+            // kleines Lautsprecher-Zeichen zum Anhoeren
+            int sx = nx2 - 12;
+            context.fill(sx, y + 7, sx + 2, y + 11, overName ? C_ACCENT : C_MUTED);
+            context.fill(sx + 2, y + 6, sx + 3, y + 12, overName ? C_ACCENT : C_MUTED);
+            context.fill(sx + 3, y + 5, sx + 4, y + 13, overName ? C_ACCENT : C_MUTED);
+            context.fill(sx + 6, y + 7, sx + 7, y + 11, overName ? C_ACCENT : C_MUTED);
+            if (overName) {
+                hovered = Text.translatable("arnestyles.mod.totem_pop_sound.play", index + 1, PvpVisuals.POP_SOUNDS.length);
+            }
+            hits.add(new Hit(nx1, y + 2, nx2, y + 16, PvpVisuals::previewPopSound));
+            drawPillRight(context, nx1 - 4, y + 2, Text.literal("<"), C_TEXT, mouseX, mouseY,
+                () -> PvpVisuals.selectPopSound(PvpVisuals.popSoundIndex() - 1));
+        } else if (row.section() != null) {
+            int textEnd = x + 2 + this.textRenderer.getWidth(Text.translatable(row.section()));
+            text(context, Text.translatable(row.section()), x + 2, y + 6, C_ACCENT);
+            if (ModSetting.isLoaded(row.blockedBy())) {
+                // Die einzelne Mod ist installiert: die eingebaute Version bleibt aus, damit nichts doppelt kommt
+                Text note = Text.translatable("arnestyles.gui.mod_blocked");
+                text(context, note, textEnd + 6, y + 6, C_MOD_BLOCKED);
+                textEnd += 6 + this.textRenderer.getWidth(note);
+                if (inside(mouseX, mouseY, x, y, x + w, y2)) {
+                    hovered = Text.translatable("arnestyles.gui.mod_blocked.desc", row.blockedBy());
+                }
+            }
+            context.fill(textEnd + 6, y + 10, x + w, y + 11, C_EDGE);
+        } else if (row.toggle() != null) {
+            ModSetting.Toggle toggle = row.toggle();
+            boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
+            if (over) {
+                inspectToggle = toggle;
+                inspectSlider = null;
+                hovered = toggle.blockedByMod()
+                    ? Text.translatable("arnestyles.gui.mod_blocked.desc", toggle.externalMod())
+                    : Text.translatable(toggle.descriptionKey());
+            }
+            round(context, x, y, x + w, y2, over ? C_CARD_HOVER : C_CARD);
+            text(context, Text.translatable(toggle.nameKey()), x + 8, y + 5,
+                toggle.blockedByMod() ? C_MUTED : C_TEXT);
+            drawSwitch(context, x + w - 28, y + 3, toggle.value(), toggle.value() && (!config.modEnabled || toggle.blockedByMod()));
+            hits.add(new Hit(x, y, x + w, y2, toggle::toggle));
+        } else if (row.slider() != null) {
+            if (drawSliderRow(context, row.slider(), x, y, w, config.modEnabled, mouseX, mouseY, null)) {
+                inspectSlider = row.slider();
+                inspectToggle = null;
+                hovered = Text.translatable(row.slider().descriptionKey());
+            }
+        } else if (row.action() != null && !row.color()) {
+            boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
+            if (over) {
+                hovered = Text.translatable(row.action() + ".desc");
+            }
+            round(context, x, y, x + w, y2, over ? C_CARD_HOVER : C_CARD);
+            text(context, Text.translatable(row.action()), x + 8, y + 5, C_TEXT);
+            Text open = Text.translatable("arnestyles.gui.open");
+            text(context, open, x + w - 8 - this.textRenderer.getWidth(open), y + 5, over ? C_ACCENT : C_MUTED);
+            hits.add(new Hit(x, y, x + w, y2, actionFor(row.action())));
+        } else if (row.color()) {
+            // Farbzeile: Pop Chams (ohne Schluessel), Treffer-Farbe, Umrandung oder Himmel
+            String colorKey = row.action() == null ? "pop_chams_color" : row.action();
+            String nameKey = colorNameKey(colorKey);
+            int[] palette = "sky_color".equals(colorKey) ? WorldVisuals.SKY_COLORS
+                : colorKey.startsWith("hitbox_") ? com.arnestyles.client.mods.CombatHitboxes.COLORS : ModSetting.POP_CHAMS_COLORS;
+            int current = colorValue(config, colorKey) & 0xFFFFFF;
+            boolean over = inside(mouseX, mouseY, x, y, x + w, y2);
+            if (over) {
+                hovered = Text.translatable(nameKey + ".desc");
+            }
+            boolean tall = w < COLOR_ROW_SPLIT;
+            if (tall) {
+                y2 = y + 2 * ESSENTIAL_ROW_H - 2;
+                over = inside(mouseX, mouseY, x, y, x + w, y2);
+            }
+            round(context, x, y, x + w, y2, over ? C_CARD_HOVER : C_CARD);
+            text(context, Text.translatable(nameKey), x + 8, y + 5, C_TEXT);
+            drawHexField(context, colorKey, current, x + w - 6, y + 2, mouseX, mouseY);
+            int sx = x + w - 6;
+            int sy = y;
+            if (tall) {
+                // Schmal: Farben in der zweiten Zeile, links beginnend
+                sy = y + ESSENTIAL_ROW_H - 1;
+                sx = x + 8 + palette.length * 15;
+            } else {
+                sx = x + w - 66;
+            }
+            int rowY2 = sy + ESSENTIAL_ROW_H - 2;
+            for (int c = palette.length - 1; c >= 0; c--) {
+                int rgb = palette[c];
+                int x1 = sx - 12;
+                if (current == rgb) {
+                    round(context, x1 - 1, sy + 2, sx + 1, rowY2 - 2, C_TEXT);
+                }
+                round(context, x1, sy + 3, sx, rowY2 - 3, 0xFF000000 | rgb);
+                final int pick = rgb;
+                hits.add(new Hit(x1, sy + 2, sx, rowY2 - 2, () -> setModColor(colorKey, pick)));
+                sx = x1 - 3;
+            }
+        }
+        return hovered;
+    }
+
+    private static String colorNameKey(String colorKey) {
+        com.arnestyles.client.mods.ModColors.Entry entry = com.arnestyles.client.mods.ModColors.get(colorKey);
+        if (entry != null) {
+            return entry.nameKey();
+        }
+        return switch (colorKey) {
+            case "hit_color" -> "arnestyles.mod.hit_color_pick";
+            case "outline_color" -> "arnestyles.mod.outline_color";
+            case "crosshair_target_color" -> "arnestyles.mod.crosshair_target_color";
+            case "sky_color" -> "arnestyles.mod.sky_color_pick";
+            case "hitbox_color", "hitbox_target_color", "hitbox_hurt_color", "hitbox_eye_color", "hitbox_look_color",
+                 "hitbox_outline_color" -> "arnestyles.mod." + colorKey + "_pick";
+            default -> "arnestyles.mod.pop_chams_color";
+        };
+    }
+
+    private static int colorValue(ArneStylesConfig config, String colorKey) {
+        com.arnestyles.client.mods.ModColors.Entry entry = com.arnestyles.client.mods.ModColors.get(colorKey);
+        if (entry != null) {
+            return entry.getter().applyAsInt(config);
+        }
+        return switch (colorKey) {
+            case "hit_color" -> config.hitColorRgb;
+            case "outline_color" -> config.outlineColorRgb;
+            case "crosshair_target_color" -> config.crosshairTargetRgb;
+            case "sky_color" -> config.skyColorRgb;
+            case "hitbox_color" -> config.hitboxRgb;
+            case "hitbox_target_color" -> config.hitboxTargetRgb;
+            case "hitbox_hurt_color" -> config.hitboxHurtRgb;
+            case "hitbox_eye_color" -> config.hitboxEyeRgb;
+            case "hitbox_look_color" -> config.hitboxLookRgb;
+            case "hitbox_outline_color" -> config.hitboxOutlineRgb;
+            default -> config.popChamsColor;
+        };
+    }
+
+    private static void setModColor(String colorKey, int rgb) {
+        ArneStylesConfig edit = ConfigManager.get();
+        int pick = rgb & 0xFFFFFF;
+        com.arnestyles.client.mods.ModColors.Entry entry = com.arnestyles.client.mods.ModColors.get(colorKey);
+        if (entry != null) {
+            entry.setter().accept(edit, pick);
+            ConfigManager.save();
+            return;
+        }
+        switch (colorKey) {
+            case "hit_color" -> edit.hitColorRgb = pick;
+            case "outline_color" -> edit.outlineColorRgb = pick;
+            case "crosshair_target_color" -> edit.crosshairTargetRgb = pick;
+            case "sky_color" -> edit.skyColorRgb = pick;
+            case "hitbox_color" -> edit.hitboxRgb = pick;
+            case "hitbox_target_color" -> edit.hitboxTargetRgb = pick;
+            case "hitbox_hurt_color" -> edit.hitboxHurtRgb = pick;
+            case "hitbox_eye_color" -> edit.hitboxEyeRgb = pick;
+            case "hitbox_look_color" -> edit.hitboxLookRgb = pick;
+            case "hitbox_outline_color" -> edit.hitboxOutlineRgb = pick;
+            default -> edit.popChamsColor = pick;
+        }
+        ConfigManager.save();
+    }
+
+    /** Hex-Feld "#RRGGBB" rechtsbuendig bei x2: Klick zum Eintippen, Enter uebernimmt, Esc bricht ab. */
+    private void drawHexField(DrawContext context, String colorKey, int rgb, int x2, int y, int mouseX, int mouseY) {
+        boolean editing = colorKey.equals(hexEditKey);
+        String shown = editing ? "#" + hexBuffer + ((System.currentTimeMillis() / 400) % 2 == 0 ? "_" : " ")
+            : String.format(Locale.ROOT, "#%06X", rgb);
+        int x1 = x2 - 58;
+        boolean over = inside(mouseX, mouseY, x1, y, x2, y + 14);
+        roundBordered(context, x1, y, x2, y + 14, editing ? C_ACCENT2 : over ? C_EDGE_HOVER : C_EDGE, C_FIELD);
+        context.fill(x1 + 3, y + 3, x1 + 11, y + 11, 0xFF000000 | rgb);
+        text(context, shown, x1 + 14, y + 3, editing ? C_TEXT : C_TEXT_SOFT);
+        hits.add(new Hit(x1, y, x2, y + 14, () -> {
+            hexEditKey = colorKey;
+            hexBuffer.setLength(0);
+        }));
+    }
+
+    private void applyHex() {
+        if (hexEditKey != null && hexBuffer.length() == 6) {
+            try {
+                setModColor(hexEditKey, Integer.parseInt(hexBuffer.toString(), 16));
+            } catch (NumberFormatException ignored) {
+                // nur 0-9 und A-F werden angenommen
+            }
+        }
+        hexEditKey = null;
+        hexBuffer.setLength(0);
+    }
+
+    // ---- Suche und Filter ----
+
+    private boolean modSearching() {
+        return modSearch.length() > 0 || modFilter != 0;
+    }
+
+    private static String rowNameKey(ModRow row) {
+        if (row.toggle() != null) {
+            return row.toggle().nameKey();
+        }
+        if (row.slider() != null) {
+            return row.slider().nameKey();
+        }
+        if (row.color()) {
+            return colorNameKey(row.action() == null ? "pop_chams_color" : row.action());
+        }
+        if (POP_SOUND_ROW.equals(row.action())) {
+            return "arnestyles.mod.totem_pop_sound";
+        }
+        return row.action() == null ? "" : row.action();
+    }
+
+    private boolean rowMatches(ModRow row, String query) {
+        if (modFilter != 0) {
+            if (row.toggle() == null || row.toggle().value() != (modFilter == 1)) {
+                return false;
+            }
+        }
+        if (query.isEmpty()) {
+            return true;
+        }
+        String key = rowNameKey(row);
+        if (key.isEmpty()) {
+            return false;
+        }
+        if (Text.translatable(key).getString().toLowerCase(Locale.ROOT).contains(query)) {
+            return true;
+        }
+        return Text.translatable(key + ".desc").getString().toLowerCase(Locale.ROOT).contains(query);
+    }
+
+    /** Alle Mods aller Gruppen, die zu Suche und Filter passen (mit ihren Ueberschriften). */
+    private List<ModRow> filteredModRows() {
+        String query = modSearch.toString().toLowerCase(Locale.ROOT).trim();
+        List<ModRow> out = new ArrayList<>();
+        for (ModGroup group : modGroups()) {
+            ModRow section = null;
+            for (ModRow row : group.rows()) {
+                if (row.section() != null) {
+                    section = row;
+                    continue;
+                }
+                if (!rowMatches(row, query)) {
+                    continue;
+                }
+                if (section != null) {
+                    out.add(section);
+                    section = null;
+                }
+                out.add(row);
+            }
+        }
+        return out;
+    }
+
+    /** Suchfeld und Filter-Chips in der Kopfzeile der Mods-Seite. */
+    private void drawModSearch(DrawContext context, int titleEnd, int headY, int mouseX, int mouseY) {
+        String[] filters = {"all", "on", "off"};
+        int fx = paneRight;
+        for (int i = filters.length - 1; i >= 0; i--) {
+            Text label = Text.translatable("arnestyles.mods.filter." + filters[i]);
+            int cw = this.textRenderer.getWidth(label) + 12;
+            boolean selected = modFilter == i;
+            boolean over = inside(mouseX, mouseY, fx - cw, headY - 2, fx, headY + 12);
+            roundBordered(context, fx - cw, headY - 2, fx, headY + 12, selected ? C_ACCENT : over ? C_EDGE_HOVER : C_EDGE,
+                selected ? GuiTheme.mix(C_CARD, C_ACCENT, 0.25f) : over ? C_CARD_HOVER : C_CARD);
+            text(context, label, fx - cw + 6, headY + 1, selected ? C_TEXT : C_MUTED);
+            final int pick = i;
+            hits.add(new Hit(fx - cw, headY - 2, fx, headY + 12, () -> {
+                modFilter = pick;
+                cardScroll = 0;
+            }));
+            fx -= cw + 3;
+        }
+        int sx1 = titleEnd + 12;
+        int sx2 = Math.min(fx - 8, sx1 + 170);
+        if (sx2 - sx1 < 60) {
+            return;
+        }
+        boolean active = modSearch.length() > 0;
+        roundBordered(context, sx1, headY - 2, sx2, headY + 12, active ? C_ACCENT : C_EDGE, C_FIELD);
+        // Lupe
+        context.fill(sx1 + 5, headY + 1, sx1 + 9, headY + 2, C_MUTED);
+        context.fill(sx1 + 4, headY + 2, sx1 + 5, headY + 6, C_MUTED);
+        context.fill(sx1 + 9, headY + 2, sx1 + 10, headY + 6, C_MUTED);
+        context.fill(sx1 + 5, headY + 6, sx1 + 9, headY + 7, C_MUTED);
+        context.fill(sx1 + 9, headY + 7, sx1 + 11, headY + 9, C_MUTED);
+        String shown = active ? modSearch + ((System.currentTimeMillis() / 400) % 2 == 0 ? "_" : "")
+            : Text.translatable("arnestyles.mods.search").getString();
+        text(context, this.textRenderer.trimToWidth(shown, sx2 - sx1 - 30), sx1 + 15, headY + 1, active ? C_TEXT : C_MUTED);
+        if (active) {
+            boolean overX = inside(mouseX, mouseY, sx2 - 12, headY - 2, sx2, headY + 12);
+            text(context, "x", sx2 - 9, headY + 1, overX ? C_DANGER : C_MUTED);
+            hits.add(new Hit(sx2 - 12, headY - 2, sx2, headY + 12, () -> {
+                modSearch.setLength(0);
+                cardScroll = 0;
+            }));
+        }
+    }
+
+    // ---- Dashboard-Ansicht: Bloecke je Ueberschrift in mehreren Spalten ----
+
+    private @Nullable Text drawModDashboard(DrawContext context, List<ModRow> rows, int x, int y, int w, int yBottom,
+                                            int mouseX, int mouseY) {
+        // Bloecke bilden: jede Ueberschrift beginnt einen neuen Block
+        List<List<ModRow>> blocks = new ArrayList<>();
+        for (ModRow row : rows) {
+            if (row.section() != null || blocks.isEmpty()) {
+                blocks.add(new ArrayList<>());
+            }
+            blocks.get(blocks.size() - 1).add(row);
+        }
+        int gap = 8;
+        int cols = Math.max(1, Math.min(3, (w + gap) / 240));
+        int colW = (w - (cols - 1) * gap) / cols;
+        int[] colY = new int[cols];
+        int[] bx = new int[blocks.size()];
+        int[] byPos = new int[blocks.size()];
+        int[] bh = new int[blocks.size()];
+        for (int b = 0; b < blocks.size(); b++) {
+            List<ModRow> block = blocks.get(b);
+            int h = block.get(0).section() != null ? 18 : 4;
+            for (ModRow row : block) {
+                if (row.section() == null) {
+                    h += modRowHeight(row, colW - 10);
+                }
+            }
+            h += 4;
+            int col = 0;
+            for (int c = 1; c < cols; c++) {
+                if (colY[c] < colY[col]) {
+                    col = c;
+                }
+            }
+            bx[b] = x + col * (colW + gap);
+            byPos[b] = colY[col];
+            bh[b] = h;
+            colY[col] += h + gap;
+        }
+        int total = 0;
+        for (int c : colY) {
+            total = Math.max(total, c);
+        }
+        modLineCount = Math.max(1, (total - (yBottom - y)) / ESSENTIAL_ROW_H + 2);
+        cardScroll = Math.max(0, Math.min(modLineCount - 1, cardScroll));
+        int offset = cardScroll * ESSENTIAL_ROW_H;
+        int hitStart = hits.size();
+        int sliderStart = sliderHits.size();
+        Text hovered = null;
+        int blockFill = GuiTheme.mix(C_PANEL, C_CARD, 0.45f) | 0xFF000000;
+        context.enableScissor(x - 2, y, x + w + 2, yBottom);
+        for (int b = 0; b < blocks.size(); b++) {
+            int by = y + byPos[b] - offset;
+            if (by > yBottom || by + bh[b] < y) {
+                continue;
+            }
+            List<ModRow> block = blocks.get(b);
+            int x1 = bx[b];
+            roundBordered(context, x1, by, x1 + colW, by + bh[b], C_EDGE, blockFill);
+            int ry = by + 4;
+            ModRow head = block.get(0);
+            if (head.section() != null) {
+                text(context, this.textRenderer.trimToWidth(Text.translatable(head.section()).getString(), colW - 60), x1 + 6, by + 5,
+                    C_ACCENT);
+                if (ModSetting.isLoaded(head.blockedBy())) {
+                    text(context, Text.translatable("arnestyles.gui.mod_blocked"), x1 + 6, by + 5, C_MOD_BLOCKED);
+                }
+                // Reset des Blocks (zweimal klicken)
+                String armedKey = head.section();
+                boolean armed = armedKey.equals(blockResetArmed);
+                Text reset = Text.translatable(armed ? "arnestyles.mods.reset_confirm" : "arnestyles.mods.reset");
+                int rw = this.textRenderer.getWidth(reset);
+                int rx = x1 + colW - 6 - rw;
+                boolean overReset = inside(mouseX, mouseY, rx - 3, by + 2, x1 + colW - 3, by + 15);
+                text(context, reset, rx, by + 5, armed ? C_DANGER : overReset ? C_TEXT : C_MUTED);
+                hits.add(new Hit(rx - 3, by + 2, x1 + colW - 3, by + 15, () -> {
+                    if (armedKey.equals(blockResetArmed)) {
+                        resetBlock(block);
+                        blockResetArmed = null;
+                    } else {
+                        blockResetArmed = armedKey;
+                    }
+                }));
+                context.fill(x1 + 6, by + 15, x1 + colW - 6, by + 16, C_EDGE);
+                ry = by + 18;
+            }
+            for (ModRow row : block) {
+                if (row.section() != null) {
+                    continue;
+                }
+                Text h = drawModRow(context, row, x1 + 5, ry, colW - 10, mouseX, mouseY);
+                if (h != null && mouseY >= y && mouseY < yBottom) {
+                    hovered = h;
+                }
+                ry += modRowHeight(row, colW - 10);
+            }
+        }
+        context.disableScissor();
+        // Klickflaechen ausserhalb des sichtbaren Bereichs entfernen
+        for (int i = hits.size() - 1; i >= hitStart; i--) {
+            Hit hit = hits.get(i);
+            if (hit.y1() < y || hit.y2() > yBottom) {
+                hits.remove(i);
+            }
+        }
+        for (int i = sliderHits.size() - 1; i >= sliderStart; i--) {
+            SliderHit hit = sliderHits.get(i);
+            if (hit.y1() < y || hit.y2() > yBottom) {
+                sliderHits.remove(i);
+            }
+        }
+        return hovered;
+    }
+
+    /** Setzt alle Schalter, Regler und Farben eines Blocks auf den Standard. */
+    private void resetBlock(List<ModRow> block) {
+        ArneStylesConfig defaults = new ArneStylesConfig();
+        for (ModRow row : block) {
+            if (row.toggle() != null) {
+                row.toggle().reset();
+            } else if (row.slider() != null) {
+                row.slider().reset();
+            } else if (row.color()) {
+                String key = row.action() == null ? "pop_chams_color" : row.action();
+                setModColor(key, colorValue(defaults, key));
+            }
+        }
+        ConfigManager.save();
     }
 
     // ---- Eindeutige Vorschauen ----
@@ -3724,6 +4580,22 @@ public class StylesScreen extends Screen {
         presetMessageColor = C_OK;
     }
 
+    /** Alle aktuellen Einstellungen als Code in die Zwischenablage (Name = eigener Spielername). */
+    private void copyCurrentCode() {
+        if (this.client == null) {
+            return;
+        }
+        String code = PresetManager.currentCode(this.client.getSession().getUsername());
+        if (code == null) {
+            presetMessage = Text.translatable("arnestyles.gui.preset_error").getString();
+            presetMessageColor = C_DANGER;
+            return;
+        }
+        this.client.keyboard.setClipboard(code);
+        presetMessage = Text.translatable("arnestyles.gui.share_copied", code.length()).getString();
+        presetMessageColor = C_OK;
+    }
+
     /** Preset-Code aus der Zwischenablage als neues Preset speichern. */
     private void pastePresetCode() {
         String clip = this.client == null ? null : this.client.keyboard.getClipboard();
@@ -3741,10 +4613,28 @@ public class StylesScreen extends Screen {
         if (PresetManager.load(preset)) {
             presetMessage = Text.translatable("arnestyles.gui.preset_loaded", preset.name()).getString();
             presetMessageColor = C_OK;
-            dirty = true;
+            markDirty();
             previewAssetCache.clear();
         } else {
             presetMessage = Text.translatable("arnestyles.gui.preset_error").getString();
+            presetMessageColor = C_DANGER;
+        }
+    }
+
+    /** Umbenennen: der neue Name kommt aus dem Eingabefeld oben. */
+    private void renamePreset(PresetManager.Preset preset) {
+        if (presetName.length() == 0) {
+            presetMessage = Text.translatable("arnestyles.gui.preset_rename_hint").getString();
+            presetMessageColor = C_WARN;
+            return;
+        }
+        String newName = presetName.toString();
+        if (PresetManager.rename(preset, newName)) {
+            presetMessage = Text.translatable("arnestyles.gui.preset_renamed", preset.name(), PresetManager.cleanName(newName)).getString();
+            presetMessageColor = C_OK;
+            presetName.setLength(0);
+        } else {
+            presetMessage = Text.translatable("arnestyles.gui.preset_rename_failed").getString();
             presetMessageColor = C_DANGER;
         }
     }
@@ -3848,6 +4738,31 @@ public class StylesScreen extends Screen {
             return;
         }
 
+        // Ganzes Setup als normales Texture-Pack exportieren
+        {
+            int y2 = listY + ESSENTIAL_ROW_H - 2;
+            boolean over = inside(mouseX, mouseY, paneX, listY, paneRight, y2);
+            round(context, paneX, listY, paneRight, y2, over ? C_CARD_HOVER : C_CARD);
+            drawIconAsset(context, "textures/item/bundle.png", paneX + 4, listY + 1);
+            text(context, Text.translatable(exporting ? "arnestyles.export.running" : "arnestyles.export.row"), paneX + 24, listY + 5, C_TEXT);
+            Text go = Text.translatable("arnestyles.export.button");
+            text(context, go, paneRight - 8 - this.textRenderer.getWidth(go), listY + 5, over ? C_ACCENT : C_MUTED);
+            hits.add(new Hit(paneX, listY, paneRight, y2, this::exportPack));
+            listY += ESSENTIAL_ROW_H;
+        }
+        // Alle aktuellen Einstellungen direkt als Code kopieren (ohne Preset zu speichern)
+        {
+            int y2 = listY + ESSENTIAL_ROW_H - 2;
+            boolean over = inside(mouseX, mouseY, paneX, listY, paneRight, y2);
+            round(context, paneX, listY, paneRight, y2, over ? C_CARD_HOVER : C_CARD);
+            drawIconAsset(context, "textures/item/paper.png", paneX + 4, listY + 1);
+            text(context, Text.translatable("arnestyles.gui.share_row"), paneX + 24, listY + 5, C_TEXT);
+            Text go = Text.translatable("arnestyles.gui.share_button");
+            text(context, go, paneRight - 8 - this.textRenderer.getWidth(go), listY + 5, over ? C_ACCENT : C_MUTED);
+            hits.add(new Hit(paneX, listY, paneRight, y2, this::copyCurrentCode));
+            listY += ESSENTIAL_ROW_H;
+        }
+
         // Liste
         List<PresetManager.Preset> presets = PresetManager.list();
         if (presets.isEmpty()) {
@@ -3869,6 +4784,19 @@ public class StylesScreen extends Screen {
             int x = drawPillRight(context, paneRight - 3, y + 2, deleteLabel, armed ? C_DANGER : C_MUTED, mouseX, mouseY, () -> deletePreset(preset));
             x = drawPillRight(context, x - 4, y + 2, Text.translatable("arnestyles.gui.preset_load"), C_TEXT, mouseX, mouseY, () -> loadPreset(preset));
             x = drawPillRight(context, x - 4, y + 2, Text.translatable("arnestyles.gui.preset_copy"), C_MUTED, mouseX, mouseY, () -> copyPresetCode(preset));
+            x = drawPillRight(context, x - 4, y + 2, Text.translatable("arnestyles.gui.preset_rename"), C_MUTED, mouseX, mouseY, () -> renamePreset(preset));
+            String server = com.arnestyles.client.mods.ServerPresets.currentServer();
+            if (server != null) {
+                // Auf einem Server: Preset fest an diesen Server binden (wird beim Betreten automatisch geladen)
+                boolean bound = preset.name().equals(ConfigManager.get().serverPresets.get(server));
+                x = drawPillRight(context, x - 4, y + 2, Text.translatable(bound ? "arnestyles.preset.auto_on" : "arnestyles.preset.auto"),
+                    bound ? C_OK : C_MUTED, mouseX, mouseY, () -> {
+                        com.arnestyles.client.mods.ServerPresets.toggle(server, preset.name());
+                        presetMessage = Text.translatable(bound ? "arnestyles.preset.auto_removed" : "arnestyles.preset.auto_set", preset.name(), server)
+                            .getString();
+                        presetMessageColor = C_OK;
+                    });
+            }
             String name = this.textRenderer.trimToWidth(preset.name(), x - paneX - 30);
             text(context, name, paneX + 24, y + 5, C_TEXT);
         }
@@ -3930,13 +4858,17 @@ public class StylesScreen extends Screen {
                     int pad = 8;
                     // Gras faerbt Minecraft je nach Biom, mit eigener Farbe ist die Textur schon fertig gefaerbt
                     int tileColor = !tinted && asset.endsWith("grass_block_top.png") ? GRASS_TINT : 0xFFFFFFFF;
-                    drawTile(context, entry, x + pad, y + pad, size - 2 * pad, tileColor);
+                    boolean model3d = isModel3d(style, asset);
+                    // 3D-Modell: aus den Modellteilen zusammensetzen statt den flachen "Bastelbogen" zu zeigen
+                    if (!model3d || !drawModel3d(context, style, asset, x + pad, y + pad, size - 2 * pad)) {
+                        drawTile(context, entry, x + pad, y + pad, size - 2 * pad, tileColor);
+                    }
                     if (modelOnly(style)) {
                         Text badge = Text.translatable("arnestyles.gui.model_only");
                         int bw = this.textRenderer.getWidth(badge) + 6;
                         round(context, x + size - bw - 3, y + 3, x + size - 3, y + 13, C_WARN);
                         text(context, badge, x + size - bw, y + 4, 0xFF1A1D2B);
-                    } else if (isModel3d(style, asset)) {
+                    } else if (model3d) {
                         // Eigenes 3D-Modell: die flache Textur ist nur der "Bastelbogen", im Spiel sieht es anders aus.
                         round(context, x + size - 19, y + 3, x + size - 3, y + 13, C_ACCENT);
                         text(context, "3D", x + size - 17, y + 4, C_TEXT);
@@ -4025,6 +4957,113 @@ public class StylesScreen extends Screen {
     }
 
     private final Map<String, Boolean> model3dCache = new HashMap<>();
+
+    /** Eine sichtbare Flaeche eines 3D-Modells, von vorne (Suedseite) gesehen: Rechteck, Tiefe, Textur und UV (0 bis 16). */
+    private record ModelFace(float x1, float y1, float x2, float y2, float depth, String texture, float u1, float v1, float u2, float v2) {
+    }
+
+    private final Map<String, List<ModelFace>> modelFaceCache = new HashMap<>();
+
+    /** Liest die Vorderseiten aller Wuerfel eines Item-Modells (ohne Drehung, reicht fuer eine Vorschau). */
+    private List<ModelFace> modelFaces(StyleDefinition style, String asset) {
+        String item = asset.substring("textures/item/".length(), asset.length() - ".png".length());
+        return modelFaceCache.computeIfAbsent(current.name() + "/" + style.id() + "/" + item, key -> {
+            List<ModelFace> faces = new ArrayList<>();
+            if (style.root() == null) {
+                return faces;
+            }
+            Path model = style.root().resolve("assets").resolve("minecraft").resolve("models").resolve("item").resolve(item + ".json");
+            try {
+                com.google.gson.JsonObject json = com.google.gson.JsonParser.parseString(Files.readString(model)).getAsJsonObject();
+                Map<String, String> textures = new HashMap<>();
+                if (json.has("textures")) {
+                    for (var e : json.getAsJsonObject("textures").entrySet()) {
+                        textures.put(e.getKey(), e.getValue().getAsString());
+                    }
+                }
+                for (var el : json.getAsJsonArray("elements")) {
+                    com.google.gson.JsonObject element = el.getAsJsonObject();
+                    var from = element.getAsJsonArray("from");
+                    var to = element.getAsJsonArray("to");
+                    var faceMap = element.getAsJsonObject("faces");
+                    if (from == null || to == null || faceMap == null) {
+                        continue;
+                    }
+                    com.google.gson.JsonObject face = faceMap.has("south") ? faceMap.getAsJsonObject("south")
+                        : faceMap.has("north") ? faceMap.getAsJsonObject("north") : null;
+                    if (face == null || !face.has("texture")) {
+                        continue;
+                    }
+                    String ref = face.get("texture").getAsString();
+                    for (int i = 0; i < 5 && ref.startsWith("#"); i++) {
+                        ref = textures.getOrDefault(ref.substring(1), "");
+                    }
+                    if (ref.isEmpty()) {
+                        continue;
+                    }
+                    if (ref.contains(":")) {
+                        ref = ref.substring(ref.indexOf(':') + 1);
+                    }
+                    float[] uv = {0, 0, 16, 16};
+                    if (face.has("uv")) {
+                        var a = face.getAsJsonArray("uv");
+                        for (int i = 0; i < 4; i++) {
+                            uv[i] = a.get(i).getAsFloat();
+                        }
+                    }
+                    faces.add(new ModelFace(from.get(0).getAsFloat(), 16 - to.get(1).getAsFloat(), to.get(0).getAsFloat(),
+                        16 - from.get(1).getAsFloat(), to.get(2).getAsFloat(), "textures/" + ref + ".png", uv[0], uv[1], uv[2], uv[3]));
+                }
+                faces.sort(java.util.Comparator.comparingDouble(ModelFace::depth));
+            } catch (java.io.IOException | RuntimeException e) {
+                faces.clear();
+            }
+            return faces;
+        });
+    }
+
+    /** Zeichnet die Vorderansicht eines 3D-Item-Modells ins Quadrat. false, wenn das nicht geht. */
+    private boolean drawModel3d(DrawContext context, StyleDefinition style, String asset, int x, int y, int size) {
+        List<ModelFace> faces = modelFaces(style, asset);
+        if (faces.isEmpty()) {
+            return false;
+        }
+        float minX = Float.MAX_VALUE;
+        float minY = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE;
+        float maxY = -Float.MAX_VALUE;
+        for (ModelFace f : faces) {
+            minX = Math.min(minX, f.x1());
+            minY = Math.min(minY, f.y1());
+            maxX = Math.max(maxX, f.x2());
+            maxY = Math.max(maxY, f.y2());
+        }
+        float span = Math.max(maxX - minX, maxY - minY);
+        if (span <= 0) {
+            return false;
+        }
+        float scale = size / span;
+        float offX = x + (size - (maxX - minX) * scale) / 2;
+        float offY = y + (size - (maxY - minY) * scale) / 2;
+        for (ModelFace f : faces) {
+            PreviewTextures.Entry tex = PreviewTextures.forStyle(style, f.texture());
+            if (tex == null) {
+                continue;
+            }
+            int x1 = Math.round(offX + (f.x1() - minX) * scale);
+            int y1 = Math.round(offY + (f.y1() - minY) * scale);
+            int x2 = Math.max(x1 + 1, Math.round(offX + (f.x2() - minX) * scale));
+            int y2 = Math.max(y1 + 1, Math.round(offY + (f.y2() - minY) * scale));
+            float sx = tex.width() / 16.0f;
+            float sy = tex.frameHeight() / 16.0f;
+            float u = Math.min(f.u1(), f.u2()) * sx;
+            float v = Math.min(f.v1(), f.v2()) * sy + tex.currentFrame() * tex.frameHeight();
+            int rw = Math.max(1, Math.round(Math.abs(f.u2() - f.u1()) * sx));
+            int rh = Math.max(1, Math.round(Math.abs(f.v2() - f.v1()) * sy));
+            context.drawTexture(RenderPipelines.GUI_TEXTURED, tex.id(), x1, y1, u, v, x2 - x1, y2 - y1, rw, rh, tex.width(), tex.height());
+        }
+        return true;
+    }
 
     /** true, wenn der Style fuer dieses Item ein eigenes 3D-Modell (mit "elements") mitbringt. */
     private boolean isModel3d(StyleDefinition style, String asset) {
@@ -4234,12 +5273,358 @@ public class StylesScreen extends Screen {
         drawTile(context, entry, x, y, 16, 0xFFFFFFFF);
     }
 
-    private void drawFooter(DrawContext context) {
-        context.fill(left, bottom - FOOTER_H, right, bottom - FOOTER_H + 1, C_EDGE);
-        int maxWidth = right - left - 20;
+    private void markDirty() {
+        dirty = true;
+        pendingChanges++;
+    }
+
+    /** Laedt geaenderte Texturen sofort (statt erst beim Schliessen). */
+    private void applyChanges() {
+        PerformanceSettings.flush();
+        if (dirty && this.client != null) {
+            dirty = false;
+            PreviewTextures.clear();
+            this.client.reloadResources();
+        }
+        pendingChanges = 0;
+    }
+
+    private static String versionText() {
+        if (versionText == null) {
+            versionText = "v" + net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer(com.arnestyles.ArneStyles.MOD_ID)
+                .map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
+        }
+        return versionText;
+    }
+
+    /** Fussleiste: links Version, Mitte Hinweise, rechts Presets und Uebernehmen (mit Anzahl offener Aenderungen). */
+    private void drawFooter(DrawContext context, int mouseX, int mouseY) {
+        int fy = bottom - FOOTER_H;
+        context.fill(left, fy, right, fy + 1, C_EDGE);
+        String version = "Arne Tweaks " + versionText();
+        text(context, version, left + 10, fy + 6, C_MUTED);
+        int textStart = left + 18 + this.textRenderer.getWidth(version);
+
+        // Rechts: Uebernehmen (hervorgehoben, wenn etwas offen ist) und Presets
+        boolean pending = dirty || pendingChanges > 0;
+        Text applyLabel = pendingChanges > 0
+            ? Text.translatable("arnestyles.gui.apply_count", pendingChanges)
+            : Text.translatable("arnestyles.gui.apply");
+        int bw = this.textRenderer.getWidth(applyLabel) + 14;
+        int bx2 = right - 6;
+        int bx1 = bx2 - bw;
+        int by1 = fy + 3;
+        int by2 = bottom - 3;
+        boolean over = inside(mouseX, mouseY, bx1, by1, bx2, by2);
+        int fill = pending ? (over ? GuiTheme.mix(C_ACCENT, 0xFFFFFFFF, 0.15f) : C_ACCENT) : (over ? C_CARD_HOVER : C_CARD);
+        roundBordered(context, bx1, by1, bx2, by2, pending ? C_ACCENT : over ? C_EDGE_HOVER : C_EDGE, fill);
+        text(context, applyLabel, bx1 + 7, by1 + 3, pending ? onAccent() : C_MUTED);
+        hits.add(new Hit(bx1, by1, bx2, by2, this::applyChanges));
+        int x = bx1 - 4;
+        Text presets = Text.translatable("arnestyles.gui.presets");
+        int pw = this.textRenderer.getWidth(presets) + 12;
+        boolean pOver = inside(mouseX, mouseY, x - pw, by1, x, by2);
+        roundBordered(context, x - pw, by1, x, by2, pOver ? C_EDGE_HOVER : C_EDGE, pOver ? C_CARD_HOVER : C_CARD);
+        text(context, presets, x - pw + 6, by1 + 3, C_TEXT_SOFT);
+        hits.add(new Hit(x - pw, by1, x, by2, this::openPresets));
+        x -= pw + 8;
+
         boolean danger = resetArmed;
         String key = resetArmed ? "arnestyles.gui.reset_confirm" : sortMode ? "arnestyles.gui.sort_hint" : "arnestyles.gui.hint";
-        String text = this.textRenderer.trimToWidth(Text.translatable(key).getString(), maxWidth);
-        text(context, text, left + 10, bottom - FOOTER_H + 6, danger ? C_DANGER : C_MUTED);
+        int maxWidth = x - textStart;
+        if (maxWidth > 30) {
+            String hint = this.textRenderer.trimToWidth(Text.translatable(key).getString(), maxWidth);
+            text(context, hint, textStart, fy + 6, danger ? C_DANGER : C_MUTED);
+        }
+    }
+
+    // ---- Inspector: rechte Spalte mit Live-Vorschau ----
+
+    private String originOf(StyleDefinition style) {
+        if (style.isVanilla()) {
+            return "vanilla";
+        }
+        if (style.builtIn()) {
+            return "style";
+        }
+        return originCache.computeIfAbsent(style.category().name() + "/" + style.id(), k -> {
+            Path json = style.root() == null ? null : style.root().resolve("style.json");
+            if (json == null || !Files.isRegularFile(json)) {
+                return "custom";
+            }
+            try {
+                String content = Files.readString(json);
+                return content.contains("\"drawn\": true") || content.contains("\"drawn\":true") ? "drawn"
+                    : content.contains("\"imported\": true") || content.contains("\"imported\":true") ? "pack" : "custom";
+            } catch (java.io.IOException e) {
+                return "custom";
+            }
+        });
+    }
+
+    private static int originColor(String origin) {
+        return switch (origin) {
+            case "vanilla" -> 0xFF929BAD;
+            case "style" -> 0xFFE8B44C;
+            case "pack" -> 0xFF35D6E8;
+            case "drawn" -> 0xFFFF9F43;
+            default -> 0xFFF472B6;
+        };
+    }
+
+    private void drawInspector(DrawContext context, int mouseX, int mouseY) {
+        int x1 = inspectorX;
+        int x2 = right;
+        int y1 = top + HEADER_H + 1;
+        int y2 = bottom - FOOTER_H;
+        context.fill(x1, y1, x2, y2, C_SIDEBAR);
+        context.fill(x1, y1, x1 + 1, y2, C_EDGE);
+
+        // Reiter: INSPECTOR | VORLAGEN
+        int tx = x1 + 8;
+        int ty = y1 + 6;
+        Text[] tabs = {Text.translatable("arnestyles.inspector.tab"), Text.translatable("arnestyles.inspector.themes")};
+        for (int i = 0; i < 2; i++) {
+            boolean active = (i == 1) == inspectorThemes;
+            int tw = this.textRenderer.getWidth(tabs[i]);
+            boolean over = inside(mouseX, mouseY, tx - 2, ty - 2, tx + tw + 2, ty + 11);
+            text(context, tabs[i], tx, ty, active ? C_TEXT : over ? C_TEXT_SOFT : C_MUTED);
+            if (active) {
+                context.fill(tx, ty + 10, tx + tw, ty + 12, C_ACCENT);
+            }
+            final boolean themes = i == 1;
+            hits.add(new Hit(tx - 2, ty - 2, tx + tw + 2, ty + 11, () -> inspectorThemes = themes));
+            tx += tw + 12;
+        }
+        context.fill(x1 + 1, ty + 14, x2, ty + 15, C_EDGE);
+        int cy = ty + 20;
+        int w = x2 - x1;
+        if (inspectorThemes) {
+            drawInspectorTemplates(context, x1, cy, w, y2, mouseX, mouseY);
+        } else if (modsOpen) {
+            drawInspectorMod(context, x1, cy, w, y2, mouseX, mouseY);
+        } else if (!presetsOpen && !shadersOpen && !themesOpen && !importOpen
+            && current != StyleCategory.PERFORMANCE_SETTINGS && current != StyleCategory.ESSENTIALS) {
+            drawInspectorStyle(context, x1, cy, w, y2, mouseX, mouseY);
+        } else {
+            int yy = cy;
+            for (OrderedText line : this.textRenderer.wrapLines(Text.translatable("arnestyles.inspector.page_hint"), w - 16)) {
+                text(context, line, x1 + 8, yy, C_MUTED);
+                yy += 10;
+            }
+        }
+    }
+
+    /** Grosse Live-Vorschau der Karte unter der Maus, sonst des gewaehlten Styles. */
+    private void drawInspectorStyle(DrawContext context, int x1, int cy, int w, int y2, int mouseX, int mouseY) {
+        StyleCategory category = customizing() && customizeCategory != null ? customizeCategory : current;
+        StyleDefinition selected = StyleRegistry.getSelected(category);
+        StyleDefinition style = hoveredStyle != null ? hoveredStyle : selected;
+        boolean isSelected = style.id().equals(selected.id());
+        boolean active = isSelected && ConfigManager.get().isEnabled(category) && ConfigManager.get().modEnabled;
+
+        text(context, Text.translatable(hoveredStyle != null ? "arnestyles.inspector.live" : "arnestyles.inspector.current"), x1 + 8, cy, C_ACCENT);
+        int size = Math.max(48, Math.min(w - 20, y2 - cy - 92));
+        int px = x1 + (w - size) / 2;
+        int py = cy + 12;
+        roundBordered(context, px - 2, py - 2, px + size + 2, py + size + 2, isSelected ? C_ACCENT2 : C_EDGE, C_FIELD);
+        drawPreview(context, style, px, py, size);
+
+        int ty = py + size + 8;
+        String name = this.textRenderer.trimToWidth(style.name().getString(), w - 16);
+        text(context, name, x1 + 8, ty, C_TEXT);
+        text(context, categoryName(category), x1 + 8, ty + 11, C_MUTED);
+        String origin = originOf(style);
+        Text originText = Text.translatable("arnestyles.origin." + origin);
+        text(context, originText, x2(x1, w) - 8 - this.textRenderer.getWidth(originText), ty + 11, originColor(origin));
+
+        int sy = ty + 25;
+        if (active) {
+            roundBordered(context, x1 + 8, sy, x1 + w - 8, sy + 15, C_OK, GuiTheme.mix(C_CARD, C_OK, 0.18f));
+            Text t = Text.translatable("arnestyles.inspector.active");
+            text(context, t, x1 + (w - this.textRenderer.getWidth(t)) / 2, sy + 4, C_OK);
+        } else {
+            // Knopf: diesen Style waehlen
+            boolean over = inside(mouseX, mouseY, x1 + 8, sy, x1 + w - 8, sy + 15);
+            roundBordered(context, x1 + 8, sy, x1 + w - 8, sy + 15, C_ACCENT2, over ? GuiTheme.mix(C_ACCENT2, 0xFFFFFFFF, 0.15f) : C_ACCENT2);
+            Text t = Text.translatable(isSelected ? "arnestyles.inspector.enable" : "arnestyles.inspector.choose");
+            text(context, t, x1 + (w - this.textRenderer.getWidth(t)) / 2, sy + 4, 0xFFFFFFFF);
+            hits.add(new Hit(x1 + 8, sy, x1 + w - 8, sy + 15, isSelected ? this::toggleCurrent : () -> chooseStyle(style)));
+        }
+    }
+
+    private static int x2(int x1, int w) {
+        return x1 + w;
+    }
+
+    /** Mod unter der Maus (bleibt stehen, bis ein anderer gezeigt wird): Name, Beschreibung, Status, Vorschau. */
+    private void drawInspectorMod(DrawContext context, int x1, int cy, int w, int y2, int mouseX, int mouseY) {
+        if (inspectToggle == null && inspectSlider == null) {
+            int yy = cy;
+            for (OrderedText line : this.textRenderer.wrapLines(Text.translatable("arnestyles.inspector.mod_hint"), w - 16)) {
+                text(context, line, x1 + 8, yy, C_MUTED);
+                yy += 10;
+            }
+            return;
+        }
+        String nameKey = inspectToggle != null ? inspectToggle.nameKey() : inspectSlider.nameKey();
+        String descKey = inspectToggle != null ? inspectToggle.descriptionKey() : inspectSlider.descriptionKey();
+        text(context, Text.translatable("arnestyles.inspector.live"), x1 + 8, cy, C_ACCENT);
+        int bx = x1 + 8;
+        int bw = w - 16;
+        int bh = Math.min(84, Math.max(56, (y2 - cy) / 3));
+        int by = cy + 12;
+        roundBordered(context, bx - 1, by - 1, bx + bw + 1, by + bh + 1, C_EDGE, C_FIELD);
+        context.enableScissor(bx, by, bx + bw, by + bh);
+        boolean drew = drawModPreview(context, nameKey, bx, by, bw, bh);
+        context.disableScissor();
+        if (!drew) {
+            Text none = Text.translatable("arnestyles.inspector.no_preview");
+            text(context, none, bx + (bw - this.textRenderer.getWidth(none)) / 2, by + bh / 2 - 4, C_MUTED);
+        }
+
+        int ty = by + bh + 8;
+        for (OrderedText line : this.textRenderer.wrapLines(Text.translatable(nameKey), w - 16)) {
+            text(context, line, x1 + 8, ty, C_TEXT);
+            ty += 10;
+        }
+        ty += 3;
+        if (inspectToggle != null) {
+            ModSetting.Toggle toggle = inspectToggle;
+            boolean on = toggle.value();
+            boolean over = inside(mouseX, mouseY, x1 + 8, ty, x1 + w - 8, ty + 15);
+            int color = on ? C_OK : C_OFF;
+            roundBordered(context, x1 + 8, ty, x1 + w - 8, ty + 15, over ? C_EDGE_HOVER : color, GuiTheme.mix(C_CARD, color, 0.2f));
+            Text t = Text.translatable(on ? "arnestyles.inspector.on" : "arnestyles.inspector.off");
+            text(context, t, x1 + (w - this.textRenderer.getWidth(t)) / 2, ty + 4, on ? C_OK : C_MUTED);
+            hits.add(new Hit(x1 + 8, ty, x1 + w - 8, ty + 15, toggle::toggle));
+        } else {
+            String value = inspectSlider.display();
+            roundBordered(context, x1 + 8, ty, x1 + w - 8, ty + 15, C_EDGE, C_CARD);
+            text(context, value, x1 + (w - this.textRenderer.getWidth(value)) / 2, ty + 4, C_ACCENT);
+        }
+        ty += 22;
+        for (OrderedText line : this.textRenderer.wrapLines(Text.translatable(descKey), w - 16)) {
+            if (ty > y2 - 12) {
+                break;
+            }
+            text(context, line, x1 + 8, ty, C_MUTED);
+            ty += 10;
+        }
+    }
+
+    /** Kleine bewegte Vorschau fuer einige Mods. false = keine Vorschau fuer diesen Mod. */
+    private boolean drawModPreview(DrawContext context, String nameKey, int x, int y, int w, int h) {
+        String id = nameKey.substring(nameKey.lastIndexOf('.') + 1);
+        long now = System.currentTimeMillis();
+        if (id.startsWith("spotify")) {
+            int cw = Math.min(w - 12, 150);
+            int cx = x + (w - cw) / 2;
+            int ch = 44;
+            int cy = y + (h - ch) / 2;
+            context.fill(cx, cy, cx + cw, cy + ch, 0xD8121212);
+            context.fill(cx, cy, cx + 2, cy + ch, com.arnestyles.client.mods.SpotifyHud.accent());
+            int tx = cx + 7;
+            if (ConfigManager.get().spotifyCover) {
+                if (!com.arnestyles.client.mods.SpotifyHud.drawCurrentCover(context, cx + 5, cy + 4, 30)) {
+                    context.fill(cx + 5, cy + 4, cx + 35, cy + 34, 0xFF2A2A2A);
+                }
+                tx = cx + 40;
+            }
+            text(context, "Song", tx, cy + 5, 0xFFFFFFFF);
+            text(context, "Artist", tx, cy + 16, 0xFFB3B3B3);
+            boolean lyrics = ConfigManager.get().spotifyLyrics;
+            text(context, lyrics ? "\u266A Lyrics \u2026" : "\u266A", tx, cy + 27, com.arnestyles.client.mods.SpotifyHud.accent());
+            float f = (now % 8000L) / 8000.0f;
+            context.fill(cx + 7, cy + ch - 5, cx + cw - 6, cy + ch - 3, 0x40FFFFFF);
+            context.fill(cx + 7, cy + ch - 5, cx + 7 + Math.round((cw - 13) * f), cy + ch - 3, com.arnestyles.client.mods.SpotifyHud.accent());
+            return true;
+        }
+        if (id.startsWith("crosshair") || id.equals("custom_crosshair")) {
+            // Eigenes Fadenkreuz gross auf Spiel-Hintergrund, Farbe wie im Spiel
+            int s = Math.min(w, h) - 16;
+            int bx = x + (w - s) / 2;
+            int by = y + (h - s) / 2;
+            context.fill(bx, by, bx + s, by + s / 2, 0xFF7FA6D9);
+            context.fill(bx, by + s / 2, bx + s, by + s, 0xFF5E8C3A);
+            float scale = Math.max(1.0f, (s - 8) / (float) com.arnestyles.client.mods.CustomCrosshair.SIZE);
+            int rgb = id.equals("crosshair_target_color") ? ConfigManager.get().crosshairTargetRgb : ConfigManager.get().crosshairRgb;
+            com.arnestyles.client.mods.CustomCrosshair.draw(context, bx + s / 2.0f - scale / 2.0f, by + s / 2.0f - scale / 2.0f, rgb, scale);
+            return true;
+        }
+        if (id.startsWith("item_counter") || id.startsWith("count_")) {
+            // Kleine Hotbar-Leiste mit den gewaehlten Items
+            net.minecraft.item.Item[] items = {net.minecraft.item.Items.TOTEM_OF_UNDYING, net.minecraft.item.Items.ENDER_PEARL,
+                net.minecraft.item.Items.END_CRYSTAL, net.minecraft.item.Items.OBSIDIAN, net.minecraft.item.Items.GOLDEN_APPLE,
+                net.minecraft.item.Items.EXPERIENCE_BOTTLE};
+            int[] counts = {3, 16, 64, 128, 12, 1};
+            int cell = 20;
+            int bw = items.length * cell + 4;
+            int bx = x + (w - bw) / 2;
+            int by = y + (h - 30) / 2;
+            com.arnestyles.client.mods.HudStyle.background(context, bx, by, bx + bw, by + 30);
+            int warn = Math.round(ConfigManager.get().itemCounterWarn);
+            for (int i = 0; i < items.length; i++) {
+                int ix = bx + 4 + i * cell;
+                context.drawItem(new net.minecraft.item.ItemStack(items[i]), ix, by + 2);
+                String n = String.valueOf(counts[i]);
+                int color = warn > 0 && counts[i] <= warn ? 0xFF000000 | ConfigManager.get().itemCounterWarnRgb
+                    : com.arnestyles.client.mods.HudStyle.text();
+                context.drawText(this.textRenderer, n, ix + (16 - this.textRenderer.getWidth(n)) / 2, by + 20, color, true);
+            }
+            return true;
+        }
+        if (id.startsWith("totem_pop") || id.startsWith("totem_particle")) {
+            // Totem fliegt im eingestellten Stil, bunte Partikel drumherum
+            float speed = ConfigManager.get().totemPopSpeed;
+            float t = ((now * speed) % 2000L) / 2000.0f;
+            int cxm = x + w / 2;
+            int cym = y + h / 2;
+            PREVIEW_RANDOM.setSeed(7L);
+            for (int i = 0; i < 18; i++) {
+                double a = i * 0.7 + t * 4.0;
+                double r = 10 + (i % 5) * 6 + t * 18;
+                int rgb = com.arnestyles.client.mods.TotemPop.particleColor(PREVIEW_RANDOM);
+                if (rgb < 0) {
+                    rgb = (i % 2 == 0) ? 0xC8E85A : 0x8FD14F;
+                }
+                int px = cxm + (int) Math.round(Math.cos(a) * r);
+                int py = cym + (int) Math.round(Math.sin(a) * r * 0.6);
+                context.fill(px, py, px + 2, py + 2, 0xFF000000 | rgb);
+            }
+            var m = context.getMatrices();
+            m.pushMatrix();
+            float scale = 2.2f * (0.6f + 0.4f * (float) Math.sin(Math.min(1.0f, t * 1.4f) * Math.PI / 2));
+            m.translate(cxm, cym);
+            if (!com.arnestyles.client.mods.TotemPop.noSpin()) {
+                m.rotate((float) (Math.sin(t * Math.PI * 2) * 0.35));
+            }
+            if (!com.arnestyles.client.mods.TotemPop.centered()) {
+                m.translate((float) Math.sin(t * Math.PI * 2) * 8.0f, 0.0f);
+            }
+            m.scale(scale, scale);
+            context.drawItem(TOTEM_STACK, -8, -8);
+            m.popMatrix();
+            return true;
+        }
+        return false;
+    }
+
+    /** Vorlagen (Farben + Aufbau) mit einem Klick wechseln. */
+    private void drawInspectorTemplates(DrawContext context, int x1, int cy, int w, int y2, int mouseX, int mouseY) {
+        int y = cy;
+        for (GuiLayout.Template template : GuiLayout.TEMPLATES) {
+            if (y + 16 > y2 - 2) {
+                break;
+            }
+            boolean on = GuiLayout.matches(template);
+            boolean over = inside(mouseX, mouseY, x1 + 6, y, x1 + w - 6, y + 16);
+            roundBordered(context, x1 + 6, y, x1 + w - 6, y + 16, on ? C_ACCENT : over ? C_EDGE_HOVER : C_EDGE, over ? C_CARD_HOVER : C_CARD);
+            drawThemeSwatches(context, GuiTheme.find(template.theme()), x1 + 10, y + 4);
+            String name = this.textRenderer.trimToWidth(Text.translatable(template.nameKey()).getString(), w - 52);
+            text(context, name, x1 + 40, y + 4, on ? C_TEXT : C_TEXT_SOFT);
+            hits.add(new Hit(x1 + 6, y, x1 + w - 6, y + 16, () -> GuiLayout.apply(template)));
+            y += 18;
+        }
     }
 }

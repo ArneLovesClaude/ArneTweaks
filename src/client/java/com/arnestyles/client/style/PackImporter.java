@@ -44,6 +44,11 @@ import java.util.stream.Stream;
  */
 public final class PackImporter {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    /** Nur Dateitypen, die ein Texture-Pack wirklich braucht. Alles andere (z. B. .exe, .jar, .bat) wird nie kopiert. */
+    private static final Set<String> ALLOWED = Set.of("png", "json", "mcmeta", "properties", "ogg", "txt", "jem", "jpm");
+    /** Schutz vor riesigen oder praeparierten Packs (ZIP-Bomben). */
+    private static final long MAX_PACK_BYTES = 512L * 1024 * 1024;
+    private static final int MAX_PACK_FILES = 60_000;
 
     private static final String MAT = "(wooden|stone|iron|golden|diamond|netherite|copper)";
     private static final String ARMOR_ITEM = "\\w+_(helmet|chestplate|leggings|boots)";
@@ -254,6 +259,61 @@ public final class PackImporter {
         return list;
     }
 
+    /** Entfernte Packs (zum Wiederherstellen), unsichtbar im Import-Ordner. */
+    public static Path removedDir() {
+        return importDir().resolve(".removed");
+    }
+
+    /**
+     * Pack aus der Liste nehmen. Liegt es im Import-Ordner, wird es nach .removed verschoben (wiederherstellbar),
+     * ins Fenster gezogene Packs bleiben, wo sie sind, und werden nur aus der Liste genommen.
+     */
+    public static void remove(Path pack) {
+        if (QUEUED.contains(pack) || pack.equals(running)) {
+            return;
+        }
+        DROPPED.remove(pack);
+        RESULTS.remove(pack);
+        if (pack.getParent() != null && pack.getParent().equals(importDir())) {
+            try {
+                Files.createDirectories(removedDir());
+                Files.move(pack, removedDir().resolve(pack.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                ArneStyles.LOGGER.warn("Pack {} konnte nicht entfernt werden", pack, e);
+            }
+        }
+    }
+
+    public static int removedCount() {
+        Path dir = removedDir();
+        if (!Files.isDirectory(dir)) {
+            return 0;
+        }
+        try (Stream<Path> files = Files.list(dir)) {
+            return (int) files.count();
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
+    /** Alle entfernten Packs zurueck in den Import-Ordner (vorhandene gleichnamige bleiben). */
+    public static void restoreAll() {
+        Path dir = removedDir();
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        try (Stream<Path> files = Files.list(dir)) {
+            for (Path file : files.toList()) {
+                Path target = importDir().resolve(file.getFileName().toString());
+                if (!Files.exists(target)) {
+                    Files.move(file, target);
+                }
+            }
+        } catch (IOException e) {
+            ArneStyles.LOGGER.warn("Packs konnten nicht wiederhergestellt werden", e);
+        }
+    }
+
     /** Ordner, in den man Packs zum Importieren legt. */
     public static Path importDir() {
         return FabricLoader.getInstance().getConfigDir().resolve("arnestyles").resolve("import");
@@ -313,15 +373,50 @@ public final class PackImporter {
         try {
             loadVanilla();
             if (Files.isDirectory(pack)) {
-                return sort(pack, StyleRegistry.stylesRoot(), id, name);
+                String tooBig = checkSize(pack);
+                return tooBig != null ? new Result(name, id, Map.of(), 0, tooBig) : sort(pack, StyleRegistry.stylesRoot(), id, name);
             }
             try (FileSystem zip = FileSystems.newFileSystem(pack)) {
-                return sort(zip.getPath("/"), StyleRegistry.stylesRoot(), id, name);
+                String tooBig = checkSize(zip.getPath("/"));
+                return tooBig != null ? new Result(name, id, Map.of(), 0, tooBig) : sort(zip.getPath("/"), StyleRegistry.stylesRoot(), id, name);
             }
         } catch (Exception e) {
             ArneStyles.LOGGER.warn("Pack {} konnte nicht importiert werden", pack, e);
             return new Result(name, id, Map.of(), 0, e.getClass().getSimpleName() + ": " + e.getMessage());
         }
+    }
+
+    /** Fehlertext, wenn das Pack zu gross ist oder zu viele Dateien hat, sonst null. */
+    private static @Nullable String checkSize(Path root) throws IOException {
+        long bytes = 0;
+        int count = 0;
+        try (Stream<Path> walk = Files.walk(root)) {
+            for (Path p : (Iterable<Path>) walk::iterator) {
+                if (!Files.isRegularFile(p, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                    continue;
+                }
+                bytes += Files.size(p);
+                if (++count > MAX_PACK_FILES || bytes > MAX_PACK_BYTES) {
+                    return "Pack zu gross (hoechstens " + (MAX_PACK_BYTES >> 20) + " MB und " + MAX_PACK_FILES + " Dateien)";
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean allowedFile(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        return dot > 0 && ALLOWED.contains(fileName.substring(dot + 1).toLowerCase(Locale.ROOT));
+    }
+
+    /** Ziel muss im Zielordner bleiben (kein "../" aus einem praeparierten Pack). */
+    private static Path inside(Path base, Path target) throws IOException {
+        Path b = base.toAbsolutePath().normalize();
+        Path t = target.toAbsolutePath().normalize();
+        if (!t.startsWith(b)) {
+            throw new IOException("Ungueltiger Pfad im Pack: " + target);
+        }
+        return t;
     }
 
     // ---- Vanilla-Infos ----
@@ -378,7 +473,7 @@ public final class PackImporter {
 
     // ---- Sortieren ----
 
-    private static @Nullable String categoryOf(String rel) {
+    public static @Nullable String categoryOf(String rel) {
         for (Rule rule : RULES) {
             if (rule.pattern().matcher(rel).matches()) {
                 return rule.category();
@@ -573,6 +668,7 @@ public final class PackImporter {
             }
             JsonObject style = new JsonObject();
             style.addProperty("name", name);
+            style.addProperty("imported", true);
             Files.writeString(dest.resolve("style.json"), GSON.toJson(style), StandardCharsets.UTF_8);
             try (Stream<Path> walk = Files.walk(dest)) {
                 summary.put(cat, (int) walk.filter(Files::isRegularFile).count() - 1);
@@ -712,8 +808,14 @@ public final class PackImporter {
     }
 
     private static void copy(Path mc, String rel, Path destRoot, String destRel, @Nullable Map<String, String> mapping) throws IOException {
-        Path source = at(mc, rel);
-        Path target = destRoot.resolve("assets").resolve("minecraft").resolve(destRel).normalize();
+        if (!allowedFile(destRel) || !allowedFile(rel)) {
+            return;
+        }
+        Path source = inside(mc, at(mc, rel));
+        Path target = inside(destRoot, destRoot.resolve("assets").resolve("minecraft").resolve(destRel));
+        if (!Files.isRegularFile(source, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
         Files.createDirectories(target.getParent());
         Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
         if (rel.endsWith(".json")) {
@@ -748,10 +850,13 @@ public final class PackImporter {
                 if (fileName.startsWith("._") || fileName.equals(".DS_Store") || fileName.equals("Thumbs.db")) {
                     continue;
                 }
-                Path target = to.resolve(from.relativize(p).toString().replace('\\', '/'));
+                if (Files.isSymbolicLink(p)) {
+                    continue;
+                }
+                Path target = inside(to, to.resolve(from.relativize(p).toString().replace('\\', '/')));
                 if (Files.isDirectory(p)) {
                     Files.createDirectories(target);
-                } else {
+                } else if (allowedFile(fileName)) {
                     Files.createDirectories(target.getParent());
                     Files.copy(p, target, StandardCopyOption.REPLACE_EXISTING);
                 }

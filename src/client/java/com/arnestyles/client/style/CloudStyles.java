@@ -311,7 +311,8 @@ public final class CloudStyles {
     }
 
     private static byte[] download(String url, @Nullable String sha, long limit, @Nullable String progressKey) throws IOException {
-        if (!url.startsWith("https://") && !url.startsWith("http://")) {
+        // Nur verschluesselt laden, damit niemand unterwegs die Dateien austauschen kann
+        if (!url.startsWith("https://")) {
             throw new IOException("Ungueltige Adresse " + url);
         }
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))

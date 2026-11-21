@@ -64,7 +64,8 @@ public abstract class ClientPlayNetworkHandlerMixin {
         if (sound == net.minecraft.sound.SoundEvents.ITEM_TOTEM_USE) {
             float scaled = volume * com.arnestyles.client.mods.PvpVisuals.popVolume();
             if (scaled > 0.0f) {
-                original.call(world, x, y, z, com.arnestyles.client.mods.PvpVisuals.popSound(), category, scaled, pitch, useDistance);
+                original.call(world, x, y, z, com.arnestyles.client.mods.PvpVisuals.popSound(), category, scaled,
+                    pitch * com.arnestyles.client.mods.TotemPop.pitchFactor(), useDistance);
             }
             return;
         }

@@ -68,7 +68,7 @@ public final class PreviewTextures {
     /** Ein einzelnes Bild, z. B. preview.png. */
     public static @Nullable Entry forFile(Path file) {
         String key = "file:" + file.toAbsolutePath();
-        return CACHE.computeIfAbsent(key, k -> Optional.ofNullable(loadFile(file, 1))).orElse(null);
+        return CACHE.computeIfAbsent(key, k -> Optional.ofNullable(loadFile(file, 0))).orElse(null);
     }
 
     /** Eingefaerbte Vorschauen: pro Karte nur die aktuelle Farbe, beim Schieben wird die alte freigegeben. */
@@ -109,7 +109,18 @@ public final class PreviewTextures {
             NativeImage image = TintedTextures.readImage(root, assetPath);
             if (image != null) {
                 TintedTextures.apply(category, styleKey, root, assetPath, image);
-                int frameTime = root == null ? 1 : readFrameTime(root.resolve("assets").resolve("minecraft").resolve(assetPath + ".mcmeta"));
+                if (TintedTextures.rainbowFor(category, styleKey, assetPath, image)) {
+                    // Regenbogen: dieselbe Bildfolge wie im Spiel, damit die Vorschau mitlaeuft
+                    NativeImage strip = TintedTextures.rainbowStrip(image);
+                    image.close();
+                    entry = upload(strip, TintedTextures.rainbowFrameTime(category, styleKey, assetPath));
+                    TINTED.put(key, new Tinted(signature, entry));
+                    return entry;
+                }
+                Path styleFile = root == null ? null : root.resolve("assets").resolve("minecraft").resolve(assetPath);
+                int frameTime = styleFile != null && Files.isRegularFile(styleFile)
+                    ? readFrameTime(styleFile.resolveSibling(styleFile.getFileName() + ".mcmeta"))
+                    : vanillaFrameTime(assetPath);
                 entry = upload(image, frameTime);
             }
         } catch (IOException | RuntimeException e) {
@@ -159,20 +170,16 @@ public final class PreviewTextures {
     }
 
     private static @Nullable Entry loadVanilla(String assetPath) {
+        if (!Identifier.isPathValid(assetPath)) {
+            // z. B. "textures/Desktop/1.png" aus einem Pack-Modell: Minecraft erlaubt nur Kleinbuchstaben, also keine Vorschau
+            return null;
+        }
         var pack = MinecraftClient.getInstance().getDefaultResourcePack();
         InputSupplier<InputStream> image = pack.open(ResourceType.CLIENT_RESOURCES, Identifier.ofVanilla(assetPath));
         if (image == null) {
             return null;
         }
-        int frameTime = 1;
-        InputSupplier<InputStream> meta = pack.open(ResourceType.CLIENT_RESOURCES, Identifier.ofVanilla(assetPath + ".mcmeta"));
-        if (meta != null) {
-            try (InputStream in = meta.get()) {
-                frameTime = parseFrameTime(in);
-            } catch (IOException | RuntimeException e) {
-                frameTime = 1;
-            }
-        }
+        int frameTime = vanillaFrameTime(assetPath);
         try (InputStream in = image.get()) {
             return upload(NativeImage.read(in), frameTime);
         } catch (IOException | RuntimeException e) {
@@ -181,14 +188,32 @@ public final class PreviewTextures {
         }
     }
 
+    /** Wie readFrameTime, aber fuer die Minecraft-Textur selbst. */
+    private static int vanillaFrameTime(String assetPath) {
+        if (!Identifier.isPathValid(assetPath + ".mcmeta")) {
+            return 0;
+        }
+        InputSupplier<InputStream> meta = MinecraftClient.getInstance().getDefaultResourcePack()
+            .open(ResourceType.CLIENT_RESOURCES, Identifier.ofVanilla(assetPath + ".mcmeta"));
+        if (meta == null) {
+            return 0;
+        }
+        try (InputStream in = meta.get()) {
+            return parseFrameTime(in);
+        } catch (IOException | RuntimeException e) {
+            return 0;
+        }
+    }
+
+    /** Ticks pro Bild aus der .mcmeta, oder 0 wenn die Textur nicht animiert ist. */
     private static int readFrameTime(Path mcmeta) {
         if (!Files.isRegularFile(mcmeta)) {
-            return 1;
+            return 0;
         }
         try (InputStream in = Files.newInputStream(mcmeta)) {
             return parseFrameTime(in);
         } catch (IOException | RuntimeException e) {
-            return 1;
+            return 0;
         }
     }
 
@@ -201,11 +226,12 @@ public final class PreviewTextures {
                 if (frameTime != null && frameTime.isJsonPrimitive()) {
                     return Math.max(1, frameTime.getAsInt());
                 }
+                return 1;
             }
         } catch (IOException | RuntimeException e) {
-            // Ungueltige .mcmeta: einfach Standardgeschwindigkeit verwenden.
+            // Ungueltige .mcmeta: wie Minecraft als nicht animiert behandeln.
         }
-        return 1;
+        return 0;
     }
 
     private static Entry upload(NativeImage image, int frameTime) {
@@ -213,7 +239,8 @@ public final class PreviewTextures {
         MinecraftClient.getInstance().getTextureManager().registerTexture(id, new NativeImageBackedTexture(() -> "arnestyles preview " + id, image));
         int width = image.getWidth();
         int height = image.getHeight();
-        int frames = width > 0 && height > width && height % width == 0 ? height / width : 1;
+        // Nur Texturen mit "animation" in der .mcmeta sind Bildfolgen. Hohe Bilder ohne (z. B. Regen 64x256) sind ein Bild.
+        int frames = frameTime > 0 && width > 0 && height > width && height % width == 0 ? height / width : 1;
         return new Entry(id, width, height, frames, Math.max(1, frameTime));
     }
 }

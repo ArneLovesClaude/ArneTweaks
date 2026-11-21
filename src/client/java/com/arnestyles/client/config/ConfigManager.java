@@ -93,6 +93,12 @@ public final class ConfigManager {
         }
     }
 
+    /** Ersetzt die ganze Config (z. B. beim Laden eines Presets mit allen Einstellungen) und speichert sofort. */
+    public static synchronized void replace(ArneStylesConfig next) {
+        config = next;
+        save();
+    }
+
     /** Setzt alles auf Standardwerte zurueck und speichert sofort. */
     public static synchronized void resetToDefaults() {
         config = createDefaults();

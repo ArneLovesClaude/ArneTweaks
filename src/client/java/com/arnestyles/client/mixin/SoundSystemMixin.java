@@ -19,12 +19,12 @@ public abstract class SoundSystemMixin {
         at = @At(value = "INVOKE", target = "Lnet/minecraft/client/sound/SoundSystem;getAdjustedVolume(FLnet/minecraft/sound/SoundCategory;)F")
     )
     private float arnestyles$packVolumeOnPlay(float volume, @Local(argsOnly = true) SoundInstance sound) {
-        return volume * PackSoundVolume.factor(sound);
+        return volume * PackSoundVolume.factor(sound) * com.arnestyles.client.mods.SoundMixer.factor(sound);
     }
 
     /** Bei laufenden Sounds, deren Lautstaerke jeden Tick neu berechnet wird. */
     @ModifyReturnValue(method = "getAdjustedVolume(Lnet/minecraft/client/sound/SoundInstance;)F", at = @At("RETURN"))
     private float arnestyles$packVolumeOnTick(float volume, SoundInstance sound) {
-        return volume * PackSoundVolume.factor(sound);
+        return volume * PackSoundVolume.factor(sound) * com.arnestyles.client.mods.SoundMixer.factor(sound);
     }
 }

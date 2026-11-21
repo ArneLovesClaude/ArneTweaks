@@ -31,15 +31,31 @@ public class HudEditorScreen extends Screen {
     private double grabY;
 
     public HudEditorScreen(@Nullable Screen parent) {
+        this(parent, HudLayout.showVanilla);
+    }
+
+    /** vanilla = Minecraft-Teile (Hotbar, Scoreboard ...) gleich mit einblenden. */
+    public HudEditorScreen(@Nullable Screen parent, boolean vanilla) {
         super(Text.translatable("arnestyles.hud.title"));
         this.parent = parent;
+        HudLayout.showVanilla = vanilla;
+    }
+
+    private Text vanillaLabel() {
+        return Text.translatable(HudLayout.showVanilla ? "arnestyles.hud.vanilla_on" : "arnestyles.hud.vanilla_off");
     }
 
     @Override
     protected void init() {
         HudLayout.editing = true;
         addDrawableChild(ButtonWidget.builder(Text.translatable("gui.done"), button -> close())
-            .dimensions(this.width / 2 - 40, 22, 80, 20)
+            .dimensions(this.width / 2 - 84, 22, 80, 20)
+            .build());
+        addDrawableChild(ButtonWidget.builder(vanillaLabel(), button -> {
+                HudLayout.showVanilla = !HudLayout.showVanilla;
+                button.setMessage(vanillaLabel());
+            })
+            .dimensions(this.width / 2 + 4, 22, 120, 20)
             .build());
     }
 
@@ -59,7 +75,7 @@ public class HudEditorScreen extends Screen {
             if (b != null) {
                 shown.put(element, b);
             }
-            if (b == null) {
+            if (b == null || (element.vanilla() && !HudLayout.showVanilla)) {
                 continue;
             }
             any = true;
@@ -73,8 +89,10 @@ public class HudEditorScreen extends Screen {
             String label = Text.translatable(element.nameKey()).getString() + String.format(Locale.ROOT, "  %d%%", Math.round(pos.scale * 100));
             int lw = this.textRenderer.getWidth(label);
             int ly = b[1] - 12 < 20 ? b[3] + 3 : b[1] - 12;
-            context.fill(b[0] - 1, ly - 1, b[0] + lw + 3, ly + 9, LABEL_BG);
-            context.drawTextWithShadow(this.textRenderer, label, b[0] + 1, ly, color);
+            // Beschriftung bleibt im Bild (Anzeigen am rechten Rand)
+            int lx = Math.max(1, Math.min(b[0], this.width - lw - 4));
+            context.fill(lx - 1, ly - 1, lx + lw + 3, ly + 9, LABEL_BG);
+            context.drawTextWithShadow(this.textRenderer, label, lx + 1, ly, color);
         }
         if (!any) {
             context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("arnestyles.hud.none"), this.width / 2, 48, 0xFFE07A5F);
@@ -92,7 +110,7 @@ public class HudEditorScreen extends Screen {
         HudLayout.Element[] elements = HudLayout.Element.values();
         for (int i = elements.length - 1; i >= 0; i--) {
             int[] b = shown.get(elements[i]);
-            if (b != null && inside(x, y, b)) {
+            if (b != null && inside(x, y, b) && (!elements[i].vanilla() || HudLayout.showVanilla)) {
                 return elements[i];
             }
         }

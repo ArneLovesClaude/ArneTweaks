@@ -26,10 +26,14 @@ public final class GuiLayout {
         BUTTONS("buttons", 2, c -> c.guiButtons, (c, v) -> c.guiButtons = v),
         /** 0 = Schalter, 1 = AN/AUS als Text, 2 = Kaestchen. */
         SWITCHES("switches", 3, c -> c.guiSwitches, (c, v) -> c.guiSwitches = v),
-        /** 0 = Oberkategorien zum Aufklappen, 1 = Reiter, 2 = Kacheln. */
-        MODS_VIEW("mods_view", 3, c -> c.guiModsView, (c, v) -> c.guiModsView = v),
-        /** 0 = aus, 1 = Fenster durchsichtig. */
-        GLASS("glass", 2, c -> c.guiGlass, (c, v) -> c.guiGlass = v);
+        /** 0 = Oberkategorien zum Aufklappen, 1 = Reiter, 2 = Kacheln, 3 = Dashboard (Bloecke in Spalten). */
+        MODS_VIEW("mods_view", 4, c -> c.guiModsView, (c, v) -> c.guiModsView = v),
+        /** 0 = aus, 1 = Fenster durchsichtig, 2 = leicht durchsichtig (Spielwelt verschwommen dahinter). */
+        GLASS("glass", 3, c -> c.guiGlass, (c, v) -> c.guiGlass = v),
+        /** Rechte Spalte mit Live-Vorschau: 0 = an, 1 = aus. */
+        INSPECTOR("inspector", 2, c -> c.guiInspector, (c, v) -> c.guiInspector = v),
+        /** Fenstergroesse: 0 = normal, 1 = gross (Dashboard, nutzt mehr vom Bildschirm). */
+        SIZE("size", 2, c -> c.guiSize, (c, v) -> c.guiSize = v);
 
         public final String id;
         public final int count;
@@ -86,8 +90,9 @@ public final class GuiLayout {
         }
     }
 
-    //                          Ecken Kopf Leiste Markierung Knoepfe Schalter Mods Glas
+    //                          Ecken Kopf Leiste Markierung Knoepfe Schalter Mods Glas Inspector Groesse
     public static final List<Template> TEMPLATES = List.of(
+        new Template("arne", GuiTheme.ARNE, 0, 1, 0, 1, 0, 0, 3, 2, 0, 1),
         new Template("standard", GuiTheme.STANDARD, 0, 0, 0, 0, 0, 0, 0, 0),
         new Template("glass", "glass", 2, 1, 0, 1, 0, 0, 0, 1),
         new Template("compact", "compact", 2, 1, 1, 0, 0, 0, 1, 0),
@@ -124,7 +129,8 @@ public final class GuiLayout {
         }
         Option[] options = Option.values();
         for (int i = 0; i < options.length; i++) {
-            if (options[i].get(ConfigManager.get()) != template.values()[i]) {
+            int wanted = i < template.values().length ? template.values()[i] : 0;
+            if (options[i].get(ConfigManager.get()) != wanted) {
                 return false;
             }
         }
